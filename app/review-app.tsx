@@ -236,7 +236,7 @@ export default function ReviewApp() {
   }
 
   return <main className="shell review-app">
-    <header className="topbar"><div className="brand"><span className="brandmark" aria-hidden="true"><img src={pageAsset("favicon.svg")} alt="" /></span>Closerice</div><span className="account">共享食評</span></header>
+    <header className="topbar"><div className="brand"><span className="brandmark" aria-hidden="true"><img src={pageAsset("favicon.svg?v=2")} alt="" /></span>Closerice</div><span className="account">共享食評</span></header>
     <section className="intro"><div><p className="eyebrow">共享食評筆記</p><h1>一齊記低每一餐的味道。</h1><p>由外賣到堂食，下一次落單之前有得參考。</p></div><button className="button primary" onClick={startNew}>＋ 新增紀錄</button></section>
     <section className="mobile-page-head" aria-label="目前頁面"><p className="eyebrow">共享食評筆記</p><h1>{statusFilter === "favorite" ? "我的最愛" : "食評紀錄"}</h1><p>{loading ? "正在讀取…" : statusFilter === "favorite" ? `${reviews.filter((review) => review.status === "favorite").length} 筆最愛食評` : `一齊記低每一餐 · ${reviews.length} 筆紀錄`}</p></section>
     {message && <div className="notice" role="status">{message} <button className="icon-button" onClick={() => setMessage("")} aria-label="關閉提示">×</button></div>}
