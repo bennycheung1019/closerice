@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Closerice rice bowl">
   <rect width="128" height="128" rx="30" fill="#d7f264"/>
-  <path d="M29 63c0-17 12-29 28-30 9-11 26-10 34 2 12 3 19 13 19 28H29Z" fill="#fffdf3" stroke="#274a34" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M28 61h72c-2 27-15 44-36 44S30 88 28 61Z" fill="#274a34"/>
-  <path d="M38 73h52" fill="none" stroke="#d7f264" stroke-width="5" stroke-linecap="round"/>
-  <path d="M49 43c-2-4-5-6-9-7m24 1c0-5 2-8 5-11m13 19c3-3 6-4 10-4" fill="none" stroke="#b8c89f" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M31 64c0-19 14-33 33-33s33 14 33 33H31Z" fill="#fffdf3"/>
+  <path d="m46 51-4-4m22-4v-6m18 14 4-4" fill="none" stroke="#aac09b" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M25 64h78c-2 23-17 39-39 39S27 87 25 64Z" fill="#274a34"/>
+  <path d="M38 77h52" fill="none" stroke="#d7f264" stroke-width="5" stroke-linecap="round"/>
 </svg>
