@@ -6,9 +6,9 @@ export const metadata: Metadata = {
   description: "一齊記低每一餐的味道、相片和回憶。",
   robots: { index: false, follow: false },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-    apple: "/icon-180.png",
+    icon: "/favicon.svg?v=2",
+    shortcut: "/favicon.svg?v=2",
+    apple: "/icon-180.png?v=2",
   },
 };
 
