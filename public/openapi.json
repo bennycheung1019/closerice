@@ -1,0 +1,377 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Closerice shared reviews API",
+    "version": "1.2.0",
+    "description": "Public shared food reviews. Anyone with this URL can read and write. AI agents extract text from receipts and create records without uploading the receipt image."
+  },
+  "servers": [
+    {
+      "url": "https://closerice.benny-cheung.chatgpt.site"
+    }
+  ],
+  "paths": {
+    "/api/reviews": {
+      "get": {
+        "operationId": "listReviews",
+        "summary": "List the shared reviews",
+        "responses": {
+          "200": {
+            "description": "Review list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reviews": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Review"
+                      }
+                    }
+                  },
+                  "required": [
+                    "reviews"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/reviews": {
+      "post": {
+        "operationId": "createReview",
+        "summary": "Save one text-only review",
+        "description": "Read receipt screenshots with the agent's own image capability, collect the user's comment and score, then save the extracted data in one JSON request. Do not upload the receipt screenshot. Food photos are attached only when a person intentionally selects them in the website form.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "url"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/reviews/{id}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "operationId": "updateReview",
+        "summary": "Replace an existing review's fields",
+        "description": "Only use when the user explicitly asks to edit this review. Supply all review fields as JSON.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteReview",
+        "summary": "Delete a review and its images",
+        "description": "Only use when the user explicitly asks to delete this review.",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ReviewInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "diningDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Complete dining date, YYYY-MM-DD. Ask the user if missing."
+          },
+          "restaurant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "food": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 3000,
+            "default": "",
+            "description": "Only the user's own opinion; never infer it from a receipt."
+          },
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 5,
+            "default": null
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "keeta",
+              "foodpanda",
+              "takeaway",
+              "dine_in"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "favorite",
+              "blacklist"
+            ],
+            "default": "none"
+          },
+          "orderNumber": {
+            "type": "string",
+            "maxLength": 80,
+            "default": ""
+          },
+          "amountCents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 10000000,
+            "default": null,
+            "description": "Amount paid in Hong Kong cents, e.g. HK$118.60 = 11860."
+          },
+          "district": {
+            "type": "string",
+            "enum": [
+              "mong_kok",
+              "tsim_sha_tsui"
+            ],
+            "description": "旺角或尖沙咀。若收據未清楚顯示分店或地址，先問用戶。"
+          }
+        },
+        "required": [
+          "diningDate",
+          "restaurant",
+          "food",
+          "channel",
+          "district"
+        ]
+      },
+      "Review": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ReviewUpdateInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "photos": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "id",
+              "photos"
+            ]
+          }
+        ]
+      },
+      "ReviewUpdateInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "diningDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Complete dining date, YYYY-MM-DD. Ask the user if missing."
+          },
+          "restaurant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "food": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 3000,
+            "default": "",
+            "description": "Only the user's own opinion; never infer it from a receipt."
+          },
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 5,
+            "default": null
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "keeta",
+              "foodpanda",
+              "takeaway",
+              "dine_in"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "favorite",
+              "blacklist"
+            ],
+            "default": "none"
+          },
+          "orderNumber": {
+            "type": "string",
+            "maxLength": 80,
+            "default": ""
+          },
+          "amountCents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 10000000,
+            "default": null,
+            "description": "Amount paid in Hong Kong cents, e.g. HK$118.60 = 11860."
+          },
+          "district": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "mong_kok",
+              "tsim_sha_tsui",
+              null
+            ],
+            "description": "舊紀錄可能仍未分類；編輯時可選擇地區。"
+          }
+        },
+        "required": [
+          "diningDate",
+          "restaurant",
+          "food",
+          "channel"
+        ]
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Request failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "error"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

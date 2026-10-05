@@ -1,19 +1,18 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { photos, reviews } from "../../../db/schema";
-import { errorResponse, reviewInput, serverError } from "../../../lib/reviews";
+import { errorResponse, reviewCreateInput, serverError } from "../../../lib/reviews";
+import { sharedOwnerId } from "../../../lib/shared-collection";
 
 export async function GET() {
-  const user = await getChatGPTUser();
-  if (!user) return errorResponse("請先登入。", 401);
   try {
+    const ownerId = sharedOwnerId();
     const db = getDb();
     const rows = await db.select().from(reviews)
-      .where(eq(reviews.ownerId, user.userId))
+      .where(eq(reviews.ownerId, ownerId))
       .orderBy(desc(reviews.diningDate), desc(reviews.createdAt)).limit(300);
     const imageRows = rows.length
-      ? await db.select().from(photos).where(and(eq(photos.ownerId, user.userId), inArray(photos.reviewId, rows.map((row) => row.id))))
+      ? await db.select().from(photos).where(and(eq(photos.ownerId, ownerId), inArray(photos.reviewId, rows.map((row) => row.id))))
       : [];
     return Response.json({ reviews: rows.map((row) => ({
       ...row,
@@ -27,15 +26,14 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
-  if (!user) return errorResponse("請先登入。", 401);
-  const parsed = reviewInput.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return errorResponse("請檢查必填欄位和分數。", 400);
+  const parsed = reviewCreateInput.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return errorResponse("請檢查必填欄位、地區和分數。", 400);
   try {
+    const ownerId = sharedOwnerId();
     const db = getDb();
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    await db.insert(reviews).values({ id, ownerId: user.userId, ...parsed.data, createdAt: now, updatedAt: now });
+    await db.insert(reviews).values({ id, ownerId, ...parsed.data, createdAt: now, updatedAt: now });
     return Response.json({ id }, { status: 201 });
   } catch (error) {
     return serverError(error);
