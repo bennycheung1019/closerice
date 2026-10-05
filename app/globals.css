@@ -59,3 +59,17 @@
 }
 
 .entry-mode{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:#e8eddf;border-radius:13px;padding:4px;margin:0 0 18px}.entry-mode button{border:0;background:transparent;color:var(--forest);border-radius:10px;min-height:43px;font-weight:700;cursor:pointer}.entry-mode button.active{background:#fff;box-shadow:0 2px 7px #16230f1a}.entry-mode button:focus-visible{outline:2px solid var(--forest);outline-offset:2px}
+
+.brandmark{overflow:hidden}.brandmark img{display:block;width:100%;height:100%}
+@media(max-width:700px){
+  .review-app .overlay,.review-app .dialog{overflow-x:hidden}
+  .review-app .dialog,.review-app .dialog form,.review-app .dialog-head>div,.review-app .scan-heading>div,.review-app .field{min-width:0;max-width:100%}
+  .review-app .dialog-head .icon-button{flex:none}
+  .review-app .form-grid{width:100%;grid-template-columns:minmax(0,1fr)}
+  .review-app .field input,.review-app .field select,.review-app .field textarea{min-width:0;max-width:100%}
+  .review-app .field input[type="date"]{width:min(100%,220px);max-width:220px}
+  .review-app .field input[type="file"]{width:100%}
+  .review-app .entry-mode{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .review-app .toggle-row{flex-wrap:wrap}
+  .review-app .dialog-actions .button{min-width:0}
+}

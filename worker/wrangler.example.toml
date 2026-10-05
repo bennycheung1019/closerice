@@ -5,8 +5,8 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 [vars]
-PUBLIC_SITE_URL = "https://bennycheung1019.github.io/closerice/"
-ALLOWED_ORIGIN = "https://bennycheung1019.github.io"
+PUBLIC_SITE_URL = "https://bunbun.space/closerice/"
+ALLOWED_ORIGIN = "https://bennycheung1019.github.io,https://bunbun.space"
 
 [[d1_databases]]
 binding = "DB"
