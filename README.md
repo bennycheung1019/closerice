@@ -5,7 +5,7 @@
 ## 架構
 
 - **GitHub Pages** 提供靜態 React 網頁、AI 操作說明及 OpenAPI 文件。
-- **Cloudflare Worker** 將 `bunbun.space/closerice/` 轉送到 GitHub Pages，並在獨立的 workers.dev 網址提供 `/api`。根網址 `bunbun.space/` 回傳空白 404；其他子網域不受影響。D1 保存文字紀錄、掃描用量，以及用戶親自上載並壓縮的食物相片。
+- **Cloudflare Worker** 透過 `bunbun.space/*` route 將 `/closerice/` 轉送到 GitHub Pages，並在獨立的 workers.dev 網址提供 `/api`。根網址 `bunbun.space/` 回傳空白 404；其他子網域不受影響。D1 保存文字紀錄、掃描用量，以及用戶親自上載並壓縮的食物相片。
 - **Kimi API** 只在 Worker 內讀取訂單截圖或收據。`MOONSHOT_API_KEY` 是 Worker Secret，不會放進 GitHub 或瀏覽器。截圖不會儲存。掃描限制為每個 IP 每小時 20 次、全站每日 100 次。
 
 GitHub Pages 只能提供靜態檔案，因此 API、共享資料庫及 Kimi 金鑰不能直接搬到 Pages。遷移後，資料表仍是 `reviews`、`photos` 和 `scan_usage`；要在新 D1 依次執行 `drizzle/0000_*.sql`、`drizzle/0001_*.sql` 和 `drizzle/0002_*.sql`，再把現有資料匯入。原本的 Sites 資料庫不會隨 GitHub 原始碼自動轉移。
@@ -29,7 +29,7 @@ GitHub Pages 只能提供靜態檔案，因此 API、共享資料庫及 Kimi 金
 4. 用 Wrangler 把 `MOONSHOT_API_KEY` 設為 Worker Secret，再部署 `worker/index.ts`。不要把金鑰放進 GitHub Actions 變數或網頁。
 5. Worker 地址是 `https://closerice-api.closerice-bennycheung1019.workers.dev`，網頁建置已設定連接這個 API。
 6. 在 repository 的 **Settings → Pages** 把發佈來源設為 **GitHub Actions**。推送 `main` 後，`.github/workflows/pages.yml` 會建置及發佈網頁。
-7. 在 Cloudflare 將 `bunbun.space` 設為 `closerice-api` Worker 的 Custom Domain。Worker 只在 `/closerice/` 提供網站，根路徑回傳空白 404。
+7. 在 Cloudflare DNS 加入一筆 Proxied A 記錄：名稱 `@`，IPv4 地址 `192.0.2.0`。再在 `closerice-api` Worker 的 Domains 頁加入 `bunbun.space/*` Route。Worker 只在 `/closerice/` 提供網站，根路徑回傳空白 404。
 
 本機檢查：
 
