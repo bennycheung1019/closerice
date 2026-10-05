@@ -17,10 +17,28 @@ function corsHeaders(origin: string): HeadersInit {
 
 export default {
   async fetch(request: Request, env: Cloudflare.Env): Promise<Response> {
-    const path = new URL(request.url).pathname;
+    const url = new URL(request.url);
+    const path = url.pathname;
+    if (url.hostname === "bunbun.space") {
+      if (path === "/closerice") {
+        return Response.redirect(`https://bunbun.space/closerice/${url.search}`, 308);
+      }
+      if (!path.startsWith("/closerice/")) return new Response(null, { status: 404 });
+      if (request.method !== "GET" && request.method !== "HEAD") return new Response(null, { status: 405 });
+      const upstream = new URL(path + url.search, "https://bennycheung1019.github.io");
+      const headers = new Headers();
+      for (const name of ["Accept", "Range", "If-None-Match", "If-Modified-Since"]) {
+        const value = request.headers.get(name);
+        if (value) headers.set(name, value);
+      }
+      const response = await fetch(upstream, { method: request.method, headers, redirect: "follow" });
+      const resultHeaders = new Headers(response.headers);
+      resultHeaders.delete("set-cookie");
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers: resultHeaders });
+    }
     const origin = request.headers.get("Origin");
-    const allowedOrigin = env.ALLOWED_ORIGIN ?? "https://bennycheung1019.github.io";
-    if (origin && origin !== allowedOrigin) return new Response("Origin not allowed", { status: 403 });
+    const allowedOrigins = (env.ALLOWED_ORIGIN ?? "https://bennycheung1019.github.io,https://bunbun.space").split(",").map((value) => value.trim());
+    if (origin && !allowedOrigins.includes(origin)) return new Response("Origin not allowed", { status: 403 });
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: origin ? corsHeaders(origin) : undefined });
     }

@@ -17,7 +17,7 @@ execFileSync(process.execPath, [path.join(root, "node_modules/vite/bin/vite.js")
 
 const out = path.join(root, "dist-pages");
 const oldBase = "https://closerice.benny-cheung.chatgpt.site";
-const pageBase = "https://bennycheung1019.github.io/closerice";
+const pageBase = "https://bunbun.space/closerice";
 const guidePath = path.join(out, "llms.txt");
 writeFileSync(guidePath, readFileSync(guidePath, "utf8")
   .replaceAll(oldBase, pageBase)
