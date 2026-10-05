@@ -31,8 +31,10 @@ export async function DELETE(_request: Request, context: Context) {
     const row = await db.select({ id: reviews.id }).from(reviews)
       .where(and(eq(reviews.id, id), eq(reviews.ownerId, ownerId))).get();
     if (!row) return errorResponse("找不到紀錄。", 404);
-    const images = await db.select().from(photos).where(and(eq(photos.reviewId, id), eq(photos.ownerId, ownerId)));
-    if (env.BUCKET) await Promise.all(images.map((image) => env.BUCKET!.delete(image.objectKey)));
+    if (env.BUCKET) {
+      const images = await db.select({ objectKey: photos.objectKey, dataBase64: photos.dataBase64 }).from(photos).where(and(eq(photos.reviewId, id), eq(photos.ownerId, ownerId)));
+      await Promise.all(images.filter((image) => !image.dataBase64).map((image) => env.BUCKET!.delete(image.objectKey)));
+    }
     await db.delete(reviews).where(and(eq(reviews.id, id), eq(reviews.ownerId, ownerId)));
     return Response.json({ ok: true });
   } catch (error) {

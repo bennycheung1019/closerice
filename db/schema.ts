@@ -22,6 +22,7 @@ export const photos = sqliteTable("photos", {
   reviewId: text("review_id").notNull().references(() => reviews.id, { onDelete: "cascade" }),
   ownerId: text("owner_id").notNull(),
   objectKey: text("object_key").notNull(),
+  dataBase64: text("data_base64"),
   contentType: text("content_type").notNull(),
   originalName: text("original_name").notNull(),
   createdAt: text("created_at").notNull(),

@@ -1,0 +1,1 @@
+ALTER TABLE `photos` ADD `data_base64` text;

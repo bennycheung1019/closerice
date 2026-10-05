@@ -1,5 +1,4 @@
 import { and, eq } from "drizzle-orm";
-import { env } from "cloudflare:workers";
 import { getDb } from "../../../../../db";
 import { photos, reviews } from "../../../../../db/schema";
 import { errorResponse, serverError } from "../../../../../lib/reviews";
@@ -21,19 +20,16 @@ export async function POST(request: Request, context: Context) {
     if (existing.length >= 5) return errorResponse("每筆紀錄最多可放 5 張相片。", 400);
     const form = await request.formData();
     const file = form.get("photo");
-    if (!(file instanceof File) || !allowedTypes.has(file.type) || file.size > 8 * 1024 * 1024 || file.size === 0) {
-      return errorResponse("請選擇 8 MB 以下的 JPG、PNG 或 WebP 相片。", 400);
+    if (!(file instanceof File) || !allowedTypes.has(file.type) || file.size > 1024 * 1024 || file.size === 0) {
+      return errorResponse("相片壓縮後須少於 1 MB，請換一張再試。", 400);
     }
-    if (!env.BUCKET) return errorResponse("相片儲存暫時未啟用。", 503);
     const photoId = crypto.randomUUID();
-    const objectKey = `${ownerId}/${reviewId}/${photoId}`;
-    await env.BUCKET.put(objectKey, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
-    try {
-      await db.insert(photos).values({ id: photoId, reviewId, ownerId, objectKey, contentType: file.type, originalName: file.name.slice(0, 160), createdAt: new Date().toISOString() });
-    } catch (error) {
-      await env.BUCKET.delete(objectKey);
-      throw error;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
     }
+    await db.insert(photos).values({ id: photoId, reviewId, ownerId, objectKey: `d1:${photoId}`, dataBase64: btoa(binary), contentType: file.type, originalName: file.name.slice(0, 160), createdAt: new Date().toISOString() });
     return Response.json({ id: photoId, url: `/api/photos/${photoId}` }, { status: 201 });
   } catch (error) {
     return serverError(error);

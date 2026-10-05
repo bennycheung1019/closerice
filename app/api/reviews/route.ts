@@ -12,7 +12,7 @@ export async function GET() {
       .where(eq(reviews.ownerId, ownerId))
       .orderBy(desc(reviews.diningDate), desc(reviews.createdAt)).limit(300);
     const imageRows = rows.length
-      ? await db.select().from(photos).where(and(eq(photos.ownerId, ownerId), inArray(photos.reviewId, rows.map((row) => row.id))))
+      ? await db.select({ id: photos.id, reviewId: photos.reviewId, originalName: photos.originalName }).from(photos).where(and(eq(photos.ownerId, ownerId), inArray(photos.reviewId, rows.map((row) => row.id))))
       : [];
     return Response.json({ reviews: rows.map((row) => ({
       ...row,

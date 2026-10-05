@@ -12,7 +12,4 @@ ALLOWED_ORIGIN = "https://bennycheung1019.github.io"
 binding = "DB"
 database_name = "closerice"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
-
-[[r2_buckets]]
-binding = "BUCKET"
-bucket_name = "closerice-photos"
+migrations_dir = "../drizzle"
