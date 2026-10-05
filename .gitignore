@@ -45,3 +45,6 @@ next-env.d.ts
 /outputs/
 /work/
 *.tsbuildinfo
+/worker/wrangler.toml
+/worker/.wrangler/
+/dist-pages/

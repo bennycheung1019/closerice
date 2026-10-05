@@ -1,0 +1,23 @@
+# Closerice 食評筆記 — AI agent instructions
+
+Site: https://closerice.benny-cheung.chatgpt.site/
+Human guide: https://closerice.benny-cheung.chatgpt.site/ai
+Machine-readable API: https://closerice.benny-cheung.chatgpt.site/openapi.json
+
+This is one shared collection. Anyone with the site URL can read, add, edit, or delete its records. No ChatGPT sign-in, API key, or separate MCP connection is required. Use these instructions only when the user asks you to work with Closerice.
+
+To add a review from a screenshot:
+1. Read the screenshot yourself. Extract only visible restaurant, food, order number, total paid, delivery service, complete dining date, and branch or address. Do not invent missing details. If a date lacks a year, ask the user. If the branch or address does not clearly show 旺角 or 尖沙咀, ask the user which district applies.
+2. Ask the user for their own comment and 1–5 score if they have not supplied them. Do not infer taste or satisfaction from a receipt.
+3. When the needed details are known, POST one application/json request to /api/agent/reviews. This creates the record directly; do not open an on-site draft or ask for a second save step.
+4. Never upload or store the order screenshot. Use it only to extract text. Only a person intentionally choosing a food photo in the site's form should attach an image to a review.
+5. A successful response is HTTP 201 with the saved id. Tell the user only after that response. If it fails, report the error and keep the unsaved details available for a retry.
+
+Required fields: diningDate (YYYY-MM-DD), restaurant, food, channel (keeta, foodpanda, takeaway, or dine_in), district (mong_kok for 旺角 or tsim_sha_tsui for 尖沙咀).
+Optional API fields: comment, score (integer 1–5), status (none, favorite, or blacklist), orderNumber, amountCents (integer Hong Kong cents). For AI-assisted reviews, collect the user's comment and score before saving unless they explicitly want to leave either blank.
+Use channel=keeta for Keeta receipts, channel=foodpanda for foodpanda, channel=takeaway for self-pickup, and channel=dine_in for restaurant dining. Ask if unclear.
+
+Example JSON:
+{"diningDate":"2026-10-04","restaurant":"示例茶餐廳","food":"叉燒飯","comment":"份量足夠","score":4,"channel":"takeaway","district":"mong_kok","status":"none","orderNumber":"A123","amountCents":5800}
+
+Read existing records with GET /api/reviews. Never modify or delete a record unless the user explicitly asks. API details and response schemas are in /openapi.json.

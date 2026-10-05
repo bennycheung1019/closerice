@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const districtInput = z.enum(["mong_kok", "tsim_sha_tsui"]);
+
 export const reviewInput = z.object({
   diningDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   restaurant: z.string().trim().min(1).max(120),
@@ -10,7 +12,10 @@ export const reviewInput = z.object({
   status: z.enum(["none", "favorite", "blacklist"]).default("none"),
   orderNumber: z.string().trim().max(80).default(""),
   amountCents: z.number().int().min(0).max(10_000_000).nullable().default(null),
+  district: districtInput.nullable().default(null),
 });
+
+export const reviewCreateInput = reviewInput.extend({ district: districtInput });
 
 export type ReviewInput = z.infer<typeof reviewInput>;
 
