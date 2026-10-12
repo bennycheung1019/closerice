@@ -17,6 +17,7 @@ export default defineConfig({
       input: {
         main: path.resolve(root, "index.html"),
         ai: path.resolve(root, "ai/index.html"),
+        settings: path.resolve(root, "settings/index.html"),
       },
     },
   },

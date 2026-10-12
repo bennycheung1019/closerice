@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { and, eq, gt, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../db";
-import { collections, invites, memberships, ownershipTransfers, tags, users } from "../db/schema";
+import { collections, invites, memberships, ownershipTransfers, photos, reviews, tags, users } from "../db/schema";
 import { getCollectionAccess, getSessionUser, newInviteToken, tokenHash } from "./auth";
 import { errorResponse, serverError } from "./reviews";
 
@@ -63,6 +63,38 @@ export async function handleCollectionApi(request: Request, path: string): Promi
       const name = typeof body?.name === "string" ? body.name.trim() : "";
       if (!name || name.length > 60) return errorResponse("請輸入 1 至 60 字的群組名稱。", 400);
       await db.update(collections).set({ name }).where(eq(collections.id, collectionId));
+      return Response.json({ ok: true });
+    }
+
+    if (!subpath && request.method === "DELETE") {
+      if (access.role !== "owner") return errorResponse("只有群組擁有人可以刪除群組。", 403);
+      const body = await request.json().catch(() => null) as { name?: unknown } | null;
+      const name = typeof body?.name === "string" ? body.name.trim() : "";
+      const current = await db.select({ name: collections.name }).from(collections)
+        .where(and(eq(collections.id, collectionId), eq(collections.ownerUserId, user.id))).get();
+      if (!current) return errorResponse("找不到你擁有的群組。", 404);
+      if (name !== current.name) return errorResponse("請輸入完整群組名稱以確認刪除。", 400);
+
+      const storedPhotos = env.BUCKET ? await db.select({ objectKey: photos.objectKey, dataBase64: photos.dataBase64 }).from(photos)
+        .innerJoin(reviews, eq(photos.reviewId, reviews.id)).where(eq(reviews.collectionId, collectionId)) : [];
+      const guard = "EXISTS (SELECT 1 FROM collections WHERE id = ? AND owner_user_id = ? AND name = ?)";
+      const guardValues = [collectionId, user.id, name];
+      const statements = [
+        env.DB!.prepare(`DELETE FROM photos WHERE review_id IN (SELECT id FROM reviews WHERE collection_id = ?) AND ${guard}`).bind(collectionId, ...guardValues),
+        env.DB!.prepare(`DELETE FROM review_tags WHERE review_id IN (SELECT id FROM reviews WHERE collection_id = ?) AND ${guard}`).bind(collectionId, ...guardValues),
+        env.DB!.prepare(`DELETE FROM reviews WHERE collection_id = ? AND ${guard}`).bind(collectionId, ...guardValues),
+        env.DB!.prepare(`DELETE FROM tags WHERE collection_id = ? AND ${guard}`).bind(collectionId, ...guardValues),
+        env.DB!.prepare(`DELETE FROM invites WHERE collection_id = ? AND ${guard}`).bind(collectionId, ...guardValues),
+        env.DB!.prepare(`DELETE FROM ownership_transfers WHERE collection_id = ? AND ${guard}`).bind(collectionId, ...guardValues),
+        env.DB!.prepare(`DELETE FROM memberships WHERE collection_id = ? AND ${guard}`).bind(collectionId, ...guardValues),
+        env.DB!.prepare("DELETE FROM collections WHERE id = ? AND owner_user_id = ? AND name = ?").bind(collectionId, user.id, name),
+      ];
+      const result = await env.DB!.batch(statements);
+      if (!result.at(-1)?.meta.changes) return errorResponse("群組資料已更改，請重新整理再試。", 409);
+      if (env.BUCKET) {
+        const cleanup = await Promise.allSettled(storedPhotos.filter((photo) => !photo.dataBase64).map((photo) => env.BUCKET!.delete(photo.objectKey)));
+        if (cleanup.some((item) => item.status === "rejected")) console.error("Some deleted collection photos could not be removed from object storage");
+      }
       return Response.json({ ok: true });
     }
 
