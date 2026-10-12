@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { and, eq, gt, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../db";
 import { collections, invites, memberships, ownershipTransfers, photos, reviews, tags, users } from "../db/schema";
-import { getCollectionAccess, getSessionUser, newInviteToken, tokenHash } from "./auth";
+import { getCollectionAccess, getSessionUser, newInviteToken, refreshSession, tokenHash } from "./auth";
 import { errorResponse, serverError } from "./reviews";
 
 type MemberRole = "editor" | "viewer";
@@ -24,7 +24,10 @@ export async function handleCollectionApi(request: Request, path: string): Promi
       const pending = await db.select({ collectionId: ownershipTransfers.collectionId, name: collections.name }).from(ownershipTransfers)
         .innerJoin(collections, eq(ownershipTransfers.collectionId, collections.id))
         .where(and(eq(ownershipTransfers.toUserId, user.id), gt(ownershipTransfers.expiresAt, Date.now())));
-      return Response.json({ user, collections: [...owned.map((item) => ({ ...item, role: "owner" })), ...joined], pendingTransfers: pending }, { headers: noStore });
+      const renewedCookie = await refreshSession(request, user.id);
+      return Response.json({ user, collections: [...owned.map((item) => ({ ...item, role: "owner" })), ...joined], pendingTransfers: pending }, {
+        headers: renewedCookie ? { ...noStore, "Set-Cookie": renewedCookie } : noStore,
+      });
     }
 
     if (path === "/api/collections" && request.method === "POST") {
