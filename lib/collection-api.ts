@@ -210,7 +210,7 @@ export async function handleTagsApi(request: Request, path: string): Promise<Res
       const name = typeof body?.name === "string" ? body.name.trim() : "";
       if (!name || name.length > 24) return errorResponse("標籤名稱需為 1 至 24 字。", 400);
       const count = await db.select({ id: tags.id }).from(tags).where(eq(tags.collectionId, access.collectionId));
-      if (count.length >= 100) return errorResponse("每個群組最多可建立 100 個標籤。", 400);
+      if (count.length >= 10) return errorResponse("每個群組最多可建立 10 個標籤。", 400);
       const id = crypto.randomUUID();
       try { await db.insert(tags).values({ id, collectionId: access.collectionId, name, createdBy: access.user.id, createdAt: new Date().toISOString() }); }
       catch { return errorResponse("這個標籤已存在。", 409); }
