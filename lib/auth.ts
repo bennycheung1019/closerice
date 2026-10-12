@@ -9,7 +9,8 @@ export type CollectionAccess = { user: SessionUser; collectionId: string; role: 
 
 const sessionCookie = "__Secure-closerice_session";
 const oauthCookie = "__Secure-closerice_oauth";
-const sessionSeconds = 30 * 24 * 60 * 60;
+// Browsers cap persistent cookies (Chrome uses 400 days), so renew on each visit.
+const sessionSeconds = 400 * 24 * 60 * 60;
 const siteUrl = "https://bunbun.space/closerice/";
 const callbackUrl = "https://bunbun.space/closerice/api/auth/google/callback";
 let googleKeys: { keys: Array<JsonWebKey & { kid?: string }>; expiresAt: number } | null = null;
@@ -64,6 +65,16 @@ export async function getSessionUser(request: Request): Promise<SessionUser | nu
     .innerJoin(users, eq(sessions.userId, users.id))
     .where(and(eq(sessions.tokenHash, hash), gt(sessions.expiresAt, Date.now()))).get();
   return row ?? null;
+}
+
+export async function refreshSession(request: Request, userId: string): Promise<string | null> {
+  const token = cookie(request, sessionCookie);
+  if (!token || token.length > 128) return null;
+  const now = Date.now();
+  const renewed = await getDb().update(sessions).set({ expiresAt: now + sessionSeconds * 1000 })
+    .where(and(eq(sessions.tokenHash, await sha256(token)), eq(sessions.userId, userId), gt(sessions.expiresAt, now)))
+    .returning({ tokenHash: sessions.tokenHash });
+  return renewed.length ? sessionSetCookie(token) : null;
 }
 
 export async function getCollectionAccess(request: Request, write = false, requestedCollectionId?: string): Promise<CollectionAccess | null> {
