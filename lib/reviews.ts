@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { districtValues } from "./districts";
 
-export const districtInput = z.enum(["mong_kok", "tsim_sha_tsui"]);
+export const districtInput = z.enum(districtValues);
 
 export const reviewInput = z.object({
   diningDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
