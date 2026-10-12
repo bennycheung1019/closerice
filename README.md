@@ -5,7 +5,7 @@
 ## 架構
 
 - GitHub Pages 提供靜態 React 網頁；Cloudflare Worker 在 `bunbun.space/closerice/` 代理網頁，並在同一網域的 `/closerice/api/` 處理登入和資料請求。GitHub Pages 直連網址會導向主要網址。
-- Google OpenID Connect 驗證身分。Worker 用 HttpOnly、Secure、SameSite=Lax cookie 保存網站工作階段；Google client secret 只存於 Worker Secret。應用程式只要求 `openid email profile`，以 Google `sub` 識別用戶。
+- Google OpenID Connect 驗證身分。Worker 用 HttpOnly、Secure、SameSite=Lax cookie 保存網站工作階段，並在每次讀取帳戶時把有效工作階段續期至 400 日；瀏覽器可能提早清除 Cookie。Google client secret 只存於 Worker Secret。應用程式只要求 `openid email profile`，以 Google `sub` 識別用戶。
 - Cloudflare D1 保存用戶、群組、成員權限、邀請、食評、標籤和食物相片。每次讀寫都由 Worker 核對用戶對指定群組的權限。圖片掃描使用 Kimi，截圖不會儲存；食物相片只在用戶自行選擇後才上載。
 - 根網址 `bunbun.space/` 回傳 404，其他子網域不受影響。公開的 workers.dev API 不提供私人群組資料。
 
