@@ -160,7 +160,15 @@ export default function ReviewApp() {
       const result = await response.json() as { scan?: ScanResult; error?: string };
       if (!response.ok || !result.scan) throw new Error(result.error ?? "無法辨認圖片，請手動填寫。");
       const scan = result.scan;
-      if (!scan.restaurant && !scan.food && !scan.diningDate && !scan.orderNumber) throw new Error("圖片中找不到清晰的訂單資料，請換一張或手動填寫。");
+      const missing = [
+        !scan.restaurant && "餐廳名稱",
+        !scan.food && "食物",
+        !scan.diningDate && "用餐日期",
+        !scan.district && "地區",
+      ].filter((field): field is string => Boolean(field));
+      if (!scan.restaurant && !scan.food && !scan.diningDate && !scan.orderNumber) {
+        throw new Error(`AI 未能從圖片辨認${missing.join("、")}。請換一張清晰的圖片，或手動填寫。`);
+      }
       setDraft((old) => ({
         ...old,
         restaurant: old.restaurant || scan.restaurant,
@@ -171,8 +179,11 @@ export default function ReviewApp() {
         amountCents: old.amountCents ?? scan.amountCents,
         district: old.district || scan.district || "",
       }));
-      const missing = [!scan.diningDate && "用餐日期", !scan.district && "地區"].filter(Boolean).join("和");
-      setScanMessage(`已填入圖片中可辨認的資料${scan.district ? `，分店位於${districtNames[scan.district]}` : ""}。${missing ? `請補上${missing}，並核對其他資料。` : "請核對資料。"}截圖不會保留。`);
+      if (missing.length) {
+        setScanError(`AI 未能從圖片辨認${missing.join("、")}。已填入其他可辨認的資料，請手動補上並核對。截圖不會保留。`);
+      } else {
+        setScanMessage(`已填入圖片中可辨認的資料${scan.district ? `，分店位於${districtNames[scan.district]}` : ""}。請核對資料。截圖不會保留。`);
+      }
     } catch (cause) {
       setScanError(cause instanceof Error ? cause.message : "掃描失敗，請稍後再試。");
     } finally {
