@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Heart, List, Settings } from "lucide-react";
+import { ArrowLeft, Heart, List, Plus, Settings } from "lucide-react";
 import { collectionFetch, responseJson } from "../lib/client-api";
 import type { CollectionSummary } from "./collection-app";
 
@@ -133,6 +133,6 @@ export default function SettingsPage({ user, collections, pendingTransfers, sele
         <section className="settings-card settings-danger" aria-labelledby="settings-delete"><div className="settings-card-head"><div><h2 id="settings-delete">刪除食評群組</h2><p>刪除後，這個群組的食評、相片、標籤、邀請和成員權限都會永久移除，無法復原。其他群組不受影響。</p></div></div><form className="settings-inline-form" onSubmit={deleteCollection}><label className="settings-field">輸入「{collection.name}」以確認<input autoComplete="off" value={deleteName} onChange={(event) => setDeleteName(event.target.value)} /></label><button className="button danger" type="submit" disabled={busy || deleteName !== collection.name}>刪除群組</button></form></section>
       </>}
     </div><aside className="settings-side"><section className="settings-card" aria-labelledby="settings-account"><h2 id="settings-account">你的帳戶</h2><p className="settings-account-name">{user.name || "Google 帳戶"}</p><p className="settings-email">{user.email}</p><button className="button secondary" onClick={() => void onLogout()}>登出</button></section><p className="settings-side-note">食評和相片只會顯示給有權查看該群組的成員。</p></aside></div>
-    <nav className="mobile-tabs settings-tabs" aria-label="底部分頁"><a className="mobile-tab" href="/closerice/"><span className="mobile-tab-icon"><List size={22} aria-hidden="true" /></span><span>食評</span></a><a className="mobile-tab" href="/closerice/?view=favorite"><span className="mobile-tab-icon"><Heart size={22} aria-hidden="true" /></span><span>最愛</span></a><a className="mobile-tab active" aria-current="page" href="/closerice/settings/"><span className="mobile-tab-icon"><Settings size={22} aria-hidden="true" /></span><span>設定</span></a></nav>
+    <nav className={`mobile-tabs settings-tabs ${collection?.role === "viewer" ? "viewer-tabs" : ""}`} aria-label="底部分頁"><a className="mobile-tab" href="/closerice/"><span className="mobile-tab-icon"><List size={22} aria-hidden="true" /></span><span>食評</span></a>{collection?.role !== "viewer" && <a className="mobile-tab" href="/closerice/?view=new"><span className="mobile-tab-icon"><Plus size={23} aria-hidden="true" /></span><span>新增</span></a>}<a className="mobile-tab" href="/closerice/?view=favorite"><span className="mobile-tab-icon"><Heart size={22} aria-hidden="true" /></span><span>最愛</span></a><a className="mobile-tab active" aria-current="page" href="/closerice/settings/"><span className="mobile-tab-icon"><Settings size={22} aria-hidden="true" /></span><span>設定</span></a></nav>
   </main>;
 }
