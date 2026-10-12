@@ -15,7 +15,7 @@ export default function AiGuidePage() {
   }
 
   return <main className="shell ai-guide">
-    <header className="topbar"><a className="brand brand-link" href={pageAsset("")}><span className="brandmark" aria-hidden="true"><img src={pageAsset("favicon.svg?v=2")} alt="" /></span>Closerice</a><span className="account">共享食評</span></header>
+    <header className="topbar"><a className="brand brand-link" href={pageAsset("")}><img className="brand-logo" src={pageAsset("brand-logo.png?v=3")} alt="Closerice" /></a><span className="account">共享食評</span></header>
     <section className="ai-intro"><p className="eyebrow">用 AI 新增食評</p><h1>截圖交給 AI，食評由你話事。</h1><p>登入後，在選好的群組中使用網站的圖片掃描，或讓可使用已登入頁面工具的 AI 幫你填寫。未授權的外部 AI 不能讀寫私人群組。</p></section>
     <section className="ai-prompt-card"><div className="ai-card-head"><h2>傳給 AI 的指示</h2><button className="button primary" onClick={() => void copyPrompt()}>{copied ? "已複製" : "複製指示"}</button></div><p>{prompt}</p></section>
     <section className="ai-notes"><h2>使用前知道</h2><ul><li>網站內建掃描使用 Kimi API，辨認圖片後不會儲存截圖。</li><li>每個群組有自己的成員權限；外部 AI 不能只靠網址寫入群組。</li><li>食物相片只在你親自選擇後才會上載。</li></ul><p><a href={guideUrl}>AI 操作說明</a> · <a href={pageAsset("openapi.json")}>API 規格</a> · <a href={pageAsset("")}>返回食評</a></p></section>
