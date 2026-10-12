@@ -101,6 +101,6 @@ export default function CollectionApp() {
 
   return <>
     {error && <div className="global-notice notice error" role="alert">{error}<button className="icon-button" onClick={() => setError("")} aria-label="關閉">×</button></div>}
-    {collection ? <ReviewApp key={collection.id} collection={collection} user={session.user} tags={tagData.collectionId === selectedId ? tagData.tags : []} onCreateTag={createTag} onDeleteTag={deleteTag} /> : <main className="shell account-page"><div className="login-card"><h1>建立第一個食評群組</h1><p>建立後便可邀請家人或同事一起記錄。</p><a className="button primary" href="/closerice/settings/">前往設定</a></div></main>}
+    {collection ? <ReviewApp key={collection.id} collection={collection} collections={session.collections} onSelectCollection={selectCollection} user={session.user} tags={tagData.collectionId === selectedId ? tagData.tags : []} onCreateTag={createTag} onDeleteTag={deleteTag} /> : <main className="shell account-page"><div className="login-card"><h1>建立第一個食評群組</h1><p>建立後便可邀請家人或同事一起記錄。</p><a className="button primary" href="/closerice/settings/">前往設定</a></div></main>}
   </>;
 }
