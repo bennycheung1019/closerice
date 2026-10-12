@@ -125,7 +125,7 @@ export default function SettingsPage({ user, collections, pendingTransfers, sele
 
   const roleName = collection?.role === "owner" ? "擁有人" : collection?.role === "editor" ? "可編輯" : "只可查看";
   return <main className="shell settings-page">
-    <header className="settings-topbar"><a className="brand brand-link" href="/closerice/">Closerice</a><a className="settings-back" href="/closerice/"><ArrowLeft size={17} aria-hidden="true" />返回食評</a></header>
+    <header className="settings-topbar"><a className="brand brand-link" href="/closerice/"><img className="brand-logo" src="/closerice/brand-logo.png?v=3" alt="Closerice" /></a><a className="settings-back" href="/closerice/"><ArrowLeft size={17} aria-hidden="true" />返回食評</a></header>
     <div className="settings-intro"><p className="eyebrow">帳戶與群組</p><h1>設定</h1><p>在這裏切換食評群組，管理成員及權限。</p></div>
     {error && <div className="notice error" role="alert">{error}</div>}
     {message && <div className="notice" role="status">{message}</div>}

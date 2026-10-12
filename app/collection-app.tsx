@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { collectionFetch, responseJson } from "../lib/client-api";
-import { apiUrl } from "../lib/client-urls";
+import { apiUrl, pageAsset } from "../lib/client-urls";
 import ReviewApp from "./review-app";
 import SettingsPage from "./settings-page";
 
@@ -94,7 +94,7 @@ export default function CollectionApp() {
   }
 
   if (loading) return <main className="shell account-page"><p role="status">正在載入 Closerice…</p></main>;
-  if (!session) return <main className="shell account-page"><div className="login-card"><div className="brand">Closerice</div><h1>一齊記低每一餐。</h1><p>Closerice 是與家人、朋友和同事分享食評的筆記。建立不同群組，記錄餐廳、食物、評分和相片，並由群組擁有人決定誰可以查看或編輯。</p><a className="button primary" href={apiUrl("/api/auth/google/start")}>使用 Google 登入</a>{typeof window !== "undefined" && sessionStorage.getItem("closerice_invite") && <p className="hint">登入後會自動加入受邀群組。</p>}{error && <p className="notice error" role="alert">{error}</p>}<nav className="legal-links" aria-label="網站資料"><a href="/closerice/privacy.html">私隱政策</a><a href="/closerice/terms.html">使用條款</a></nav></div></main>;
+  if (!session) return <main className="shell account-page"><div className="login-card"><div className="brand"><img className="brand-logo" src={pageAsset("brand-logo.png?v=3")} alt="Closerice" /></div><h1>一齊記低每一餐。</h1><p>Closerice 是與家人、朋友和同事分享食評的筆記。建立不同群組，記錄餐廳、食物、評分和相片，並由群組擁有人決定誰可以查看或編輯。</p><a className="button primary" href={apiUrl("/api/auth/google/start")}>使用 Google 登入</a>{typeof window !== "undefined" && sessionStorage.getItem("closerice_invite") && <p className="hint">登入後會自動加入受邀群組。</p>}{error && <p className="notice error" role="alert">{error}</p>}<nav className="legal-links" aria-label="網站資料"><a href="/closerice/privacy.html">私隱政策</a><a href="/closerice/terms.html">使用條款</a></nav></div></main>;
 
   const collection = session.collections.find((item) => item.id === selectedId);
   if (settingsPage) return <><SettingsPage user={session.user} collections={session.collections} pendingTransfers={session.pendingTransfers} selectedId={selectedId} onSelect={selectCollection} onSessionChanged={loadSession} onLogout={logout} />{error && <div className="global-notice notice error" role="alert">{error}<button className="icon-button" onClick={() => setError("")} aria-label="關閉">×</button></div>}</>;
