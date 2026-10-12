@@ -1,17 +1,19 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Closerice shared reviews API",
-    "version": "1.2.0",
-    "description": "Public shared food reviews. Anyone with this URL can read and write. AI agents extract text from receipts and create records without uploading the receipt image."
+    "title": "Closerice collection reviews API",
+    "version": "2.0.0",
+    "description": "Authenticated food reviews. Requests require a signed-in Closerice browser session and the X-Collection-Id header for a collection the user belongs to. Writes require owner or editor permission."
   },
   "servers": [
     {
-      "url": "https://closerice.benny-cheung.chatgpt.site"
+      "url": "https://bunbun.space/closerice"
     }
   ],
+  "security": [{ "sessionCookie": [] }],
   "paths": {
     "/api/reviews": {
+      "parameters": [{ "$ref": "#/components/parameters/collectionId" }],
       "get": {
         "operationId": "listReviews",
         "summary": "List the shared reviews",
@@ -41,6 +43,7 @@
       }
     },
     "/api/agent/reviews": {
+      "parameters": [{ "$ref": "#/components/parameters/collectionId" }],
       "post": {
         "operationId": "createReview",
         "summary": "Save one text-only review",
@@ -93,6 +96,7 @@
     },
     "/api/reviews/{id}": {
       "parameters": [
+        { "$ref": "#/components/parameters/collectionId" },
         {
           "in": "path",
           "name": "id",
@@ -144,6 +148,17 @@
     }
   },
   "components": {
+    "parameters": {
+      "collectionId": {
+        "in": "header",
+        "name": "X-Collection-Id",
+        "required": true,
+        "schema": { "type": "string" }
+      }
+    },
+    "securitySchemes": {
+      "sessionCookie": { "type": "apiKey", "in": "cookie", "name": "__Secure-closerice_session" }
+    },
     "schemas": {
       "ReviewInput": {
         "type": "object",

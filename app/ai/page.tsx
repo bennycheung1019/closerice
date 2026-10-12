@@ -4,7 +4,7 @@ import { useState } from "react";
 import { pageAsset } from "../../lib/client-urls";
 
 const guideUrl = typeof window === "undefined" ? "https://bunbun.space/closerice/llms.txt" : new URL(pageAsset("llms.txt"), window.location.origin).toString();
-const prompt = `請幫我把這張食物訂單截圖的資料加入 Closerice 共享食評。先閱讀 ${guideUrl}，按當中的 API 說明操作。只記錄截圖清楚顯示的資料；缺少完整日期或無法確認餐廳在旺角還是尖沙咀，就問我。評語和 1–5 分評分由我提供，沒有的話先問我。資料齊全後，直接用一次 JSON 請求儲存紀錄；不要另開草稿，也不要上載或儲存訂單截圖。只有我親自在網站選擇食物相片時才附相片。如果你不能發送網頁寫入請求，請告訴我並給我一份可複製的草稿。`;
+const prompt = `請幫我把這張食物訂單截圖的資料加入 Closerice。先閱讀 ${guideUrl}。只記錄截圖清楚顯示的資料；缺少完整日期、餐廳、食物或地區時先問我。評語和評分只使用我提供的內容。請先確認要存入哪個食評群組；若你能在我已登入的 Closerice 頁面使用 save_closerice_review 工具，資料齊全後直接儲存。不要上載或儲存訂單截圖。如果無法使用已登入頁面的工具，請給我一份可複製的草稿，不要索取我的登入 cookie。`;
 
 export default function AiGuidePage() {
   const [copied, setCopied] = useState(false);
@@ -16,8 +16,8 @@ export default function AiGuidePage() {
 
   return <main className="shell ai-guide">
     <header className="topbar"><a className="brand brand-link" href={pageAsset("")}><span className="brandmark" aria-hidden="true"><img src={pageAsset("favicon.svg?v=2")} alt="" /></span>Closerice</a><span className="account">共享食評</span></header>
-    <section className="ai-intro"><p className="eyebrow">用 AI 新增食評</p><h1>截圖交給 AI，食評由你話事。</h1><p>把下面的指示和訂單截圖傳給能讀圖片、發送網頁請求的 AI 助手。它會問你缺少的資料，然後直接儲存文字紀錄。訂單截圖不會上載到 Closerice。</p></section>
+    <section className="ai-intro"><p className="eyebrow">用 AI 新增食評</p><h1>截圖交給 AI，食評由你話事。</h1><p>登入後，在選好的群組中使用網站的圖片掃描，或讓可使用已登入頁面工具的 AI 幫你填寫。未授權的外部 AI 不能讀寫私人群組。</p></section>
     <section className="ai-prompt-card"><div className="ai-card-head"><h2>傳給 AI 的指示</h2><button className="button primary" onClick={() => void copyPrompt()}>{copied ? "已複製" : "複製指示"}</button></div><p>{prompt}</p></section>
-    <section className="ai-notes"><h2>使用前知道</h2><ul><li>這個方式由你選用的 AI 助手讀取圖片；網站內建掃描則使用 Kimi API，由網站擁有人支付其用量。</li><li>AI 必須能發送網頁寫入請求；只能瀏覽網頁的助手可以準備草稿，但不能直接儲存。</li><li>訂單截圖只用來讀取資料，不會附在食評。食物相片可由你在網站表單親自選擇上載。</li></ul><p><a href={guideUrl}>AI 操作說明</a> · <a href={pageAsset("openapi.json")}>API 規格</a> · <a href={pageAsset("")}>返回食評</a></p></section>
+    <section className="ai-notes"><h2>使用前知道</h2><ul><li>網站內建掃描使用 Kimi API，辨認圖片後不會儲存截圖。</li><li>每個群組有自己的成員權限；外部 AI 不能只靠網址寫入群組。</li><li>食物相片只在你親自選擇後才會上載。</li></ul><p><a href={guideUrl}>AI 操作說明</a> · <a href={pageAsset("openapi.json")}>API 規格</a> · <a href={pageAsset("")}>返回食評</a></p></section>
   </main>;
 }

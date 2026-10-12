@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { errorResponse } from "../../../lib/reviews";
 import { parseReceiptScan } from "../../../lib/receipt-scan";
+import { getCollectionAccess } from "../../../lib/auth";
 
 const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxBytes = 8 * 1024 * 1024;
@@ -32,6 +33,8 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 export async function POST(request: Request) {
+  const access = await getCollectionAccess(request, true);
+  if (!access) return errorResponse("請先登入並選擇可編輯的群組。", 403);
   const apiKey = env.MOONSHOT_API_KEY?.trim();
   if (!apiKey) return errorResponse("AI 掃描暫時未設定，請先手動填寫。", 503);
   if (Number(request.headers.get("content-length") ?? 0) > maxBytes + 100_000) return errorResponse("圖片需小於 8 MB。", 413);
