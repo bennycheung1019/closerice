@@ -2,11 +2,14 @@ name = "closerice-api"
 main = "index.ts"
 compatibility_date = "2026-05-22"
 compatibility_flags = ["nodejs_compat"]
-workers_dev = true
+workers_dev = false
 
 [vars]
 PUBLIC_SITE_URL = "https://bunbun.space/closerice/"
-ALLOWED_ORIGIN = "https://bennycheung1019.github.io,https://bunbun.space"
+GOOGLE_CLIENT_ID = "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID"
+
+# Set GOOGLE_CLIENT_SECRET and INITIAL_OWNER_EMAIL with `wrangler secret put`.
+# Google OAuth redirect URI: https://bunbun.space/closerice/api/auth/google/callback
 
 [[d1_databases]]
 binding = "DB"

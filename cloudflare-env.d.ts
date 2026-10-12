@@ -5,5 +5,8 @@ declare namespace Cloudflare {
     MOONSHOT_API_KEY?: string;
     PUBLIC_SITE_URL?: string;
     ALLOWED_ORIGIN?: string;
+    GOOGLE_CLIENT_ID?: string;
+    GOOGLE_CLIENT_SECRET?: string;
+    INITIAL_OWNER_EMAIL?: string;
   }
 }

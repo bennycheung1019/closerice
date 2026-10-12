@@ -25,7 +25,7 @@ jobs:
       - name: Build static site
         run: npm run build:pages
         env:
-          VITE_API_BASE_URL: https://closerice-api.closerice-bennycheung1019.workers.dev
+          VITE_API_BASE_URL: https://bunbun.space/closerice
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist-pages

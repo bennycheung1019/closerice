@@ -1,7 +1,7 @@
 import { getDb } from "../../../../db";
 import { reviews } from "../../../../db/schema";
 import { errorResponse, reviewCreateInput, serverError } from "../../../../lib/reviews";
-import { sharedOwnerId } from "../../../../lib/shared-collection";
+import { getCollectionAccess } from "../../../../lib/auth";
 import { env } from "cloudflare:workers";
 
 export async function POST(request: Request) {
@@ -26,11 +26,15 @@ export async function POST(request: Request) {
   if (!parsed.success) return errorResponse("請檢查日期、餐廳、食物、地區、用餐方式、金額和分數。", 400);
 
   try {
+    const access = await getCollectionAccess(request, true);
+    if (!access) return errorResponse("請先登入並選擇可編輯的群組。", 403);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     await getDb().insert(reviews).values({
       id,
-      ownerId: sharedOwnerId(),
+      ownerId: access.user.id,
+      collectionId: access.collectionId,
+      createdBy: access.user.id,
       ...parsed.data,
       createdAt: now,
       updatedAt: now,

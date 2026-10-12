@@ -1,42 +1,41 @@
 # Closerice 食評筆記
 
-共享食評網頁應用程式，適合手機及電腦使用。主要網址是 [bunbun.space/closerice](https://bunbun.space/closerice/)；任何取得網址的人都可以查看、新增、修改及刪除同一份食評紀錄。
+主要網址：[bunbun.space/closerice](https://bunbun.space/closerice/)。用戶使用 Google 登入，可建立多個食評群組；每個群組的擁有人可邀請或移除成員、設定「可編輯／只可查看」權限，並在對方接受後轉讓擁有權。最愛和黑名單標記仍保留；每個群組亦可建立及篩選自訂標籤。
 
 ## 架構
 
-- **GitHub Pages** 提供靜態 React 網頁、AI 操作說明及 OpenAPI 文件。
-- **Cloudflare Worker** 透過 `bunbun.space/*` route 將 `/closerice/` 轉送到 GitHub Pages，並在獨立的 workers.dev 網址提供 `/api`。根網址 `bunbun.space/` 回傳空白 404；其他子網域不受影響。D1 保存文字紀錄、掃描用量，以及用戶親自上載並壓縮的食物相片。
-- **Kimi API** 只在 Worker 內讀取訂單截圖或收據。`MOONSHOT_API_KEY` 是 Worker Secret，不會放進 GitHub 或瀏覽器。截圖不會儲存。掃描限制為每個 IP 每小時 20 次、全站每日 100 次。
+- GitHub Pages 提供靜態 React 網頁；Cloudflare Worker 在 `bunbun.space/closerice/` 代理網頁，並在同一網域的 `/closerice/api/` 處理登入和資料請求。GitHub Pages 直連網址會導向主要網址。
+- Google OpenID Connect 驗證身分。Worker 用 HttpOnly、Secure、SameSite=Lax cookie 保存網站工作階段；Google client secret 只存於 Worker Secret。應用程式只要求 `openid email profile`，以 Google `sub` 識別用戶。
+- Cloudflare D1 保存用戶、群組、成員權限、邀請、食評、標籤和食物相片。每次讀寫都由 Worker 核對用戶對指定群組的權限。圖片掃描使用 Kimi，截圖不會儲存；食物相片只在用戶自行選擇後才上載。
+- 根網址 `bunbun.space/` 回傳 404，其他子網域不受影響。公開的 workers.dev API 不提供私人群組資料。
 
-GitHub Pages 只能提供靜態檔案，因此 API、共享資料庫及 Kimi 金鑰不能直接搬到 Pages。遷移後，資料表仍是 `reviews`、`photos` 和 `scan_usage`；要在新 D1 依次執行 `drizzle/0000_*.sql`、`drizzle/0001_*.sql` 和 `drizzle/0002_*.sql`，再把現有資料匯入。原本的 Sites 資料庫不會隨 GitHub 原始碼自動轉移。
+## 權限
 
-## 功能
+| 角色 | 權限 |
+| --- | --- |
+| 擁有人 | 讀寫食評、管理成員和邀請、轉讓擁有權 |
+| 可編輯 | 讀寫食評和相片、建立標籤；可刪除自己建立的標籤 |
+| 只可查看 | 讀取和篩選食評、查看相片 |
 
-- 手動填寫食評，或掃描訂單截圖／收據後核對表單。
-- 必須選擇旺角或尖沙咀；圖片有明確分店或地址時會自動選擇。
-- 記錄日期、餐廳、食物、評語、1 至 5 分評分、用餐方式、訂單編號及實付金額。
-- 標記最愛或黑名單，並可搜尋和按地區、標記、用餐方式篩選。
-- 只有用戶親自選擇食物相片時才上載；每筆最多 5 張 JPEG、PNG 或 WebP，每張原圖不超過 8 MB；瀏覽器會將較大的相片壓縮至約 850 KB 才上載。
-- 具備圖片理解和網頁寫入能力的 AI 助手可按 `/ai/` 指示，直接把文字食評加入共享紀錄。
+邀請連結只對指定 Google 電郵有效，7 日後過期，用過即失效。擁有權轉讓亦需受邀成員親自接受。每個用戶可以在不同群組擁有不同角色。
 
-## 部署
+## 部署或升級
 
-需要 Node.js 22.13 或更新版本、GitHub Pages，以及用於 API 的 Cloudflare 帳戶。
+需要 Node.js 22.13 或更新版本、GitHub Pages、Cloudflare Worker 和 D1、Google Cloud OAuth Web client。部署前先備份現有 D1 資料。
 
-1. 在 Cloudflare 建立 D1 資料庫 `closerice`。不需要 R2。
-2. 複製 `worker/wrangler.example.toml` 至 `worker/wrangler.toml`，填入 D1 資料庫 ID。後者已加入 `.gitignore`。
-3. 在新 D1 依次執行 `drizzle/0000_cynical_mister_fear.sql` 和 `drizzle/0001_dark_nuke.sql`，並匯入舊資料。
-4. 用 Wrangler 把 `MOONSHOT_API_KEY` 設為 Worker Secret，再部署 `worker/index.ts`。不要把金鑰放進 GitHub Actions 變數或網頁。
-5. Worker 地址是 `https://closerice-api.closerice-bennycheung1019.workers.dev`，網頁建置已設定連接這個 API。
-6. 在 repository 的 **Settings → Pages** 把發佈來源設為 **GitHub Actions**。推送 `main` 後，`.github/workflows/pages.yml` 會建置及發佈網頁。
-7. 在 Cloudflare DNS 加入一筆 Proxied A 記錄：名稱 `@`，IPv4 地址 `192.0.2.0`。再在 `closerice-api` Worker 的 Domains 頁加入 `bunbun.space/*` Route。Worker 只在 `/closerice/` 提供網站，根路徑回傳空白 404。
+1. 在 Google Cloud 建立 OAuth Web client，授權重新導向網址為 `https://bunbun.space/closerice/api/auth/google/callback`。用戶類型需支援受邀的外部 Google 帳戶。
+2. 複製 `worker/wrangler.example.toml` 至忽略版本控制的 `worker/wrangler.toml`，填入 D1 ID 和 `GOOGLE_CLIENT_ID`。現有 Cloudflare `bunbun.space/*` Worker route 繼續使用。
+3. 在 Worker 設定 `GOOGLE_CLIENT_SECRET` 和 `INITIAL_OWNER_EMAIL` 兩個 Secret。後者填入應取得現有「Home」食評群組的 Google 電郵；第一次以該電郵登入時會認領群組。原有 `MOONSHOT_API_KEY` Secret 繼續供圖片掃描使用。不要把 Secret 放進 GitHub 或網頁。
+4. 對現有 D1 執行 `drizzle/0003_watery_doctor_octopus.sql` 遷移；新資料庫則依序執行 `drizzle/0000` 至 `0003`。遷移會把舊食評和相片移入 `Home`，不會刪除它們。使用 Wrangler 時可執行 `npx wrangler d1 migrations apply closerice --remote --config worker/wrangler.toml`。
+5. 部署 Worker，然後推送網頁至 GitHub `main`。`.github/workflows/pages.yml` 會建置並發佈網頁；它設定 API base 為 `https://bunbun.space/closerice`。確認 Google 登入、舊食評、相片、不同群組權限和邀請連結正常運作。
 
 本機檢查：
 
 ```sh
 npm ci
-npm run build
-npm run build:pages  # 先設定 VITE_API_BASE_URL 為 Worker HTTPS origin
+npx tsc --noEmit
+npx drizzle-kit check
+VITE_API_BASE_URL=https://bunbun.space/closerice npm run build:pages
 ```
 
-新版 Worker 重用原本的 API 路徑；`photos` 表新增 `data_base64` 欄位，食物相片改由 D1 儲存。原本的 ChatGPT Sites 網頁可以保留為備份，直到 GitHub Pages 和新 API 都經過測試。
+已登入網頁的 AI 工具可在當前可編輯群組儲存食評。外部 AI 不能只憑公開網址讀寫私人群組；不要向 AI 聊天傳送登入 cookie。

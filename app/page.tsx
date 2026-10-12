@@ -1,5 +1,5 @@
-import ReviewApp from "./review-app";
+import CollectionApp from "./collection-app";
 
 export default function Home() {
-  return <ReviewApp />;
+  return <CollectionApp />;
 }
