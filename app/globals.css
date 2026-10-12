@@ -86,3 +86,4 @@
 .review-head-actions{gap:10px}
 select:not([multiple]){-webkit-appearance:none;appearance:none;padding-right:38px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='10' viewBox='0 0 16 10' fill='none'%3E%3Cpath d='m2 2 6 6 6-6' stroke='%235b6459' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;background-size:13px 9px}
 @media(max-width:700px){.review-head-actions .header-group-select{min-width:0;max-width:min(185px,calc(100vw - 170px));font-size:13px}}
+:is(.review-app,.settings-page) select:not([multiple]){padding-right:38px}
