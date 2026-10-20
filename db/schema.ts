@@ -7,6 +7,7 @@ export const users = sqliteTable("users", {
   name: text("name").notNull().default(""),
   displayName: text("display_name"),
   pictureUrl: text("picture_url"),
+  disabledAt: integer("disabled_at"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -107,3 +108,24 @@ export const scanUsage = sqliteTable("scan_usage", {
   count: integer("count").notNull().default(0),
   expiresAt: integer("expires_at").notNull(),
 }, (table) => [index("idx_scan_usage_expires_at").on(table.expiresAt)]);
+
+export const siteAdmins = sqliteTable("site_admins", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "restrict" }),
+  grantedAt: text("granted_at").notNull(),
+});
+
+export const siteSettings = sqliteTable("site_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
+export const adminAudit = sqliteTable("admin_audit", {
+  id: text("id").primaryKey(),
+  actorUserId: text("actor_user_id").references(() => users.id),
+  action: text("action").notNull(),
+  targetType: text("target_type").notNull(),
+  targetId: text("target_id").notNull(),
+  beforeJson: text("before_json"),
+  afterJson: text("after_json"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [index("idx_admin_audit_created").on(table.createdAt)]);

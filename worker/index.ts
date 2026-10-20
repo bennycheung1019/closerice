@@ -8,6 +8,7 @@ import { GET as getPhoto, DELETE as deletePhoto } from "../app/api/photos/[id]/r
 import { POST as scanReceipt } from "../app/api/scan/route";
 import { finishGoogleLogin, logout, startGoogleLogin } from "../lib/auth";
 import { handleCollectionApi, handleTagsApi } from "../lib/collection-api";
+import { handleAdminApi } from "../lib/admin-api";
 
 async function api(request: Request, path: string): Promise<Response> {
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && request.headers.get("Origin") !== "https://bunbun.space") {
@@ -16,6 +17,7 @@ async function api(request: Request, path: string): Promise<Response> {
   if (path === "/api/auth/google/start" && request.method === "GET") return startGoogleLogin();
   if (path === "/api/auth/google/callback" && request.method === "GET") return finishGoogleLogin(request);
   if (path === "/api/auth/logout" && request.method === "POST") return logout(request);
+  if (path.startsWith("/api/admin/")) return handleAdminApi(request, path);
   if (path === "/api/me" || path === "/api/collections" || path.startsWith("/api/collections/") || path === "/api/invites/accept") return handleCollectionApi(request, path);
   if (path === "/api/tags" || path.startsWith("/api/tags/")) return handleTagsApi(request, path);
   if (path === "/api/reviews" && request.method === "GET") return listReviews(request);

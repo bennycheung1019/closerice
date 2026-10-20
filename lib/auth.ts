@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { collections, memberships, sessions, users } from "../db/schema";
+import { collections, memberships, sessions, siteAdmins, siteSettings, users } from "../db/schema";
 
 export type CollectionRole = "owner" | "editor" | "viewer";
 export type SessionUser = { id: string; email: string; name: string; googleName: string; displayName: string | null; pictureUrl: string | null };
@@ -65,8 +65,12 @@ export async function getSessionUser(request: Request): Promise<SessionUser | nu
     name: sql<string>`coalesce(nullif(${users.displayName}, ''), ${users.name})`,
     googleName: users.name, displayName: users.displayName, pictureUrl: users.pictureUrl }).from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.tokenHash, hash), gt(sessions.expiresAt, Date.now()))).get();
+    .where(and(eq(sessions.tokenHash, hash), gt(sessions.expiresAt, Date.now()), isNull(users.disabledAt))).get();
   return row ?? null;
+}
+
+export async function isSiteAdmin(userId: string): Promise<boolean> {
+  return Boolean(await getDb().select({ userId: siteAdmins.userId }).from(siteAdmins).where(eq(siteAdmins.userId, userId)).get());
 }
 
 export async function refreshSession(request: Request, userId: string): Promise<string | null> {
@@ -178,7 +182,12 @@ export async function finishGoogleLogin(request: Request): Promise<Response> {
     const identity = await verifyGoogleIdToken(tokens.id_token, data.nonce);
     const pictureUrl = (tokens.access_token ? await googleUserInfoPicture(tokens.access_token, identity.sub) : null) ?? identity.pictureUrl;
     const db = getDb();
-    const existing = await db.select({ id: users.id, pictureUrl: users.pictureUrl }).from(users).where(eq(users.googleSubject, identity.sub)).get();
+    const existing = await db.select({ id: users.id, pictureUrl: users.pictureUrl, disabledAt: users.disabledAt }).from(users).where(eq(users.googleSubject, identity.sub)).get();
+    if (existing?.disabledAt) return Response.redirect(`${siteUrl}?authError=disabled`, 302);
+    if (!existing) {
+      const registration = await db.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, "registration_enabled")).get();
+      if (registration?.value === "false") return Response.redirect(`${siteUrl}?authError=registrationClosed`, 302);
+    }
     const userId = existing?.id ?? crypto.randomUUID();
     if (existing) await db.update(users).set({ email: identity.email, name: identity.name, pictureUrl: pictureUrl ?? existing.pictureUrl }).where(eq(users.id, userId));
     else await db.insert(users).values({ id: userId, googleSubject: identity.sub, email: identity.email, name: identity.name, pictureUrl, createdAt: new Date().toISOString() });
