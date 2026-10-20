@@ -42,6 +42,12 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
   const [message, setMessage] = useState("");
   const [panel, setPanel] = useState<null | "create" | "invite" | "rename" | "delete" | "displayName">(null);
 
+  useEffect(() => {
+    if (!message) return;
+    const timeout = window.setTimeout(() => setMessage(""), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
+
   function openPanel(next: NonNullable<typeof panel>) {
     setError(""); setMessage(""); setInviteLink(""); setOpenMemberMenu(null); setPanel(next);
     if (next === "rename") setRenameName(collection?.name ?? "");
@@ -166,7 +172,7 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
     <header className="settings-topbar"><a className="brand brand-link" href="/closerice/"><img className="brand-logo" src="/closerice/brand-logo.png?v=3" alt="Closerice" /></a><a className="settings-back" href="/closerice/"><ArrowLeft size={17} aria-hidden="true" />返回食評</a></header>
     <div className="settings-intro"><p className="eyebrow">帳戶與群組</p><h1>設定</h1><p>在這裏切換食評群組，管理成員及權限。</p></div>
     {error && <div className="notice error" role="alert">{error}</div>}
-    {message && <div className="notice" role="status">{message}</div>}
+    {message && <div className="toast" role="status">{message}</div>}
     <div className="settings-layout"><div className="settings-main">
       <section className="settings-card" aria-labelledby="settings-groups">
         <div className="settings-card-head"><div><h2 id="settings-groups">食評群組</h2><p>切換群組，查看各自的食評。</p></div><button className="settings-head-button" onClick={() => openPanel("create")}><Plus size={16} aria-hidden="true" />新增</button></div>
