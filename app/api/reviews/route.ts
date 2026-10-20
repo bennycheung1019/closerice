@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { photos, reviewTags, reviews } from "../../../db/schema";
+import { photos, reviewOpinions, reviewTags, reviews, users } from "../../../db/schema";
 import { errorResponse, reviewCreateInput, serverError } from "../../../lib/reviews";
 import { getCollectionAccess } from "../../../lib/auth";
 import { validTagIds } from "../../../lib/collection-api";
@@ -18,8 +18,15 @@ export async function GET(request: Request) {
       : [];
     const tagRows = rows.length ? await db.select({ reviewId: reviewTags.reviewId, tagId: reviewTags.tagId }).from(reviewTags)
       .where(inArray(reviewTags.reviewId, rows.map((row) => row.id))) : [];
+    const opinionRows = rows.length ? await db.select({ id: reviewOpinions.id, reviewId: reviewOpinions.reviewId,
+      authorId: reviewOpinions.authorId, comment: reviewOpinions.comment, score: reviewOpinions.score,
+      createdAt: reviewOpinions.createdAt, updatedAt: reviewOpinions.updatedAt,
+      authorName: users.name, authorPictureUrl: users.pictureUrl }).from(reviewOpinions)
+      .leftJoin(users, eq(reviewOpinions.authorId, users.id))
+      .where(inArray(reviewOpinions.reviewId, rows.map((row) => row.id))) : [];
     return Response.json({ reviews: rows.map((row) => ({
       ...row,
+      opinions: opinionRows.filter((opinion) => opinion.reviewId === row.id),
       tagIds: tagRows.filter((tag) => tag.reviewId === row.id).map((tag) => tag.tagId),
       photos: imageRows.filter((photo) => photo.reviewId === row.id).map((photo) => ({
         id: photo.id, url: `/api/photos/${photo.id}`, name: photo.originalName,
@@ -42,7 +49,11 @@ export async function POST(request: Request) {
     const db = getDb();
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    await db.insert(reviews).values({ id, ownerId: access.user.id, collectionId: access.collectionId, createdBy: access.user.id, ...parsed.data, createdAt: now, updatedAt: now });
+    const { comment, score, ...visit } = parsed.data;
+    await db.batch([
+      db.insert(reviews).values({ id, ownerId: access.user.id, collectionId: access.collectionId, createdBy: access.user.id, ...visit, comment: "", score: null, createdAt: now, updatedAt: now }),
+      db.insert(reviewOpinions).values({ id: crypto.randomUUID(), reviewId: id, authorId: access.user.id, comment, score, createdAt: now, updatedAt: now }),
+    ]);
     if (tagIds.length) await db.insert(reviewTags).values(tagIds.map((tagId) => ({ reviewId: id, tagId })));
     return Response.json({ id }, { status: 201 });
   } catch (error) {

@@ -29,6 +29,13 @@
       "when": 1791778117725,
       "tag": "0003_watery_doctor_octopus",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792464148805,
+      "tag": "0004_quiet_gauntlet",
+      "breakpoints": true
     }
   ]
 }

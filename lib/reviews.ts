@@ -18,6 +18,11 @@ export const reviewInput = z.object({
 
 export const reviewCreateInput = reviewInput.extend({ district: districtInput });
 
+export const opinionInput = z.object({
+  comment: z.string().trim().max(3000).default(""),
+  score: z.number().int().min(1).max(5).nullable().default(null),
+}).refine((value) => Boolean(value.comment) || value.score !== null);
+
 export type ReviewInput = z.infer<typeof reviewInput>;
 
 export function errorResponse(message: string, status: number) {
