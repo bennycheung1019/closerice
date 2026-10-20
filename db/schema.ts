@@ -5,6 +5,7 @@ export const users = sqliteTable("users", {
   googleSubject: text("google_subject").notNull().unique(),
   email: text("email").notNull(),
   name: text("name").notNull().default(""),
+  displayName: text("display_name"),
   pictureUrl: text("picture_url"),
   createdAt: text("created_at").notNull(),
 });

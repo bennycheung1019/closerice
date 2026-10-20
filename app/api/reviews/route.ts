@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { photos, reviewOpinions, reviewTags, reviews, users } from "../../../db/schema";
 import { errorResponse, reviewCreateInput, serverError } from "../../../lib/reviews";
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const opinionRows = (await Promise.all(idBatches.map((batch) => db.select({ id: reviewOpinions.id, reviewId: reviewOpinions.reviewId,
       authorId: reviewOpinions.authorId, comment: reviewOpinions.comment, score: reviewOpinions.score,
       createdAt: reviewOpinions.createdAt, updatedAt: reviewOpinions.updatedAt,
-      authorName: users.name, authorPictureUrl: users.pictureUrl }).from(reviewOpinions)
+      authorName: sql<string>`coalesce(nullif(${users.displayName}, ''), ${users.name})`, authorPictureUrl: users.pictureUrl }).from(reviewOpinions)
       .leftJoin(users, eq(reviewOpinions.authorId, users.id))
       .where(inArray(reviewOpinions.reviewId, batch))))).flat();
     return Response.json({ reviews: rows.map((row) => ({

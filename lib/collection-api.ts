@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { and, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { collections, invites, memberships, ownershipTransfers, photos, reviews, tags, users } from "../db/schema";
 import { getCollectionAccess, getSessionUser, newInviteToken, refreshSession, tokenHash } from "./auth";
@@ -28,6 +28,15 @@ export async function handleCollectionApi(request: Request, path: string): Promi
       return Response.json({ user, collections: [...owned.map((item) => ({ ...item, role: "owner" })), ...joined], pendingTransfers: pending }, {
         headers: renewedCookie ? { ...noStore, "Set-Cookie": renewedCookie } : noStore,
       });
+    }
+
+    if (path === "/api/me" && request.method === "PATCH") {
+      const body = await request.json().catch(() => null) as { displayName?: unknown } | null;
+      if (typeof body?.displayName !== "string") return errorResponse("請輸入顯示名稱。", 400);
+      const displayName = body.displayName.trim();
+      if (displayName.length > 60 || /[\u0000-\u001f\u007f]/.test(displayName)) return errorResponse("顯示名稱最多 60 字，不能包含控制字元。", 400);
+      await db.update(users).set({ displayName: displayName || null }).where(eq(users.id, user.id));
+      return Response.json({ displayName: displayName || null, name: displayName || user.googleName }, { headers: noStore });
     }
 
     if (path === "/api/collections" && request.method === "POST") {
@@ -103,9 +112,10 @@ export async function handleCollectionApi(request: Request, path: string): Promi
 
     if (subpath === "members" && request.method === "GET") {
       if (access.role !== "owner") return errorResponse("只有群組擁有人可以查看成員資料。", 403);
-      const owner = await db.select({ id: users.id, email: users.email, name: users.name }).from(collections)
+      const shownName = sql<string>`coalesce(nullif(${users.displayName}, ''), ${users.name})`;
+      const owner = await db.select({ id: users.id, email: users.email, name: shownName, pictureUrl: users.pictureUrl }).from(collections)
         .innerJoin(users, eq(collections.ownerUserId, users.id)).where(eq(collections.id, collectionId)).get();
-      const members = await db.select({ id: users.id, email: users.email, name: users.name, role: memberships.role }).from(memberships)
+      const members = await db.select({ id: users.id, email: users.email, name: shownName, pictureUrl: users.pictureUrl, role: memberships.role }).from(memberships)
         .innerJoin(users, eq(memberships.userId, users.id)).where(eq(memberships.collectionId, collectionId));
       const pendingInvites = await db.select({ id: invites.id, email: invites.email, role: invites.role, expiresAt: invites.expiresAt }).from(invites)
         .where(and(eq(invites.collectionId, collectionId), gt(invites.expiresAt, Date.now()), isNull(invites.acceptedAt)));
