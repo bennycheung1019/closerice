@@ -323,7 +323,8 @@
               "favorite",
               "blacklist"
             ],
-            "default": "none"
+            "default": "none",
+            "description": "Personal to the signed-in user in the selected collection; other members do not see this mark."
           },
           "orderNumber": {
             "type": "string",
@@ -593,7 +594,8 @@
               "favorite",
               "blacklist"
             ],
-            "default": "none"
+            "default": "none",
+            "description": "Personal to the signed-in user in the selected collection; other members do not see this mark."
           },
           "orderNumber": {
             "type": "string",

@@ -148,8 +148,9 @@ export async function handleAdminApi(request: Request, path: string): Promise<Re
       if (!part && request.method === "GET") {
         const members = await many<Row>("SELECT m.user_id id,u.email,coalesce(nullif(u.display_name,''),u.name) name,u.picture_url pictureUrl,m.role,u.disabled_at disabledAt FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.collection_id=? ORDER BY u.email", id);
         const invites = await many<Row>("SELECT id,email,role,expires_at expiresAt FROM invites WHERE collection_id=? AND accepted_at IS NULL AND expires_at>? ORDER BY created_at DESC", id, Date.now());
-        const tags = await many<Row>("SELECT id,name FROM tags WHERE collection_id=? ORDER BY name", id);
-        return json({ collection: current, members, invites, tags });
+        const tagUsers = await many<Row>("SELECT u.id,coalesce(nullif(u.display_name,''),u.name,u.email) name,u.email FROM users u WHERE u.id=? OR EXISTS (SELECT 1 FROM memberships m WHERE m.collection_id=? AND m.user_id=u.id) ORDER BY u.email", current.owner_user_id, id);
+        const tags = await many<Row>("SELECT id,name,user_id userId FROM personal_tags WHERE collection_id=? ORDER BY name", id);
+        return json({ collection: current, members, invites, tags, tagUsers });
       }
       if (!part && request.method === "PATCH") {
         const body = await request.json().catch(() => null) as { name?: unknown; ownerUserId?: unknown } | null;
@@ -248,23 +249,26 @@ export async function handleAdminApi(request: Request, path: string): Promise<Re
         return json({ ok: true });
       }
       if (part === "tags" && !partId && request.method === "POST") {
-        const body = await request.json().catch(() => null) as { name?: unknown } | null;
+        const body = await request.json().catch(() => null) as { name?: unknown; userId?: unknown } | null;
         const name = safeName(body?.name, 24);
         if (!name) return errorResponse("標籤名稱需為 1 至 24 字。", 400);
-        const count = await one<{ count: number }>("SELECT count(*) count FROM tags WHERE collection_id=?", id);
-        if ((count?.count ?? 0) >= 10) return errorResponse("每群組最多 10 個標籤。", 400);
+        const userId = typeof body?.userId === "string" ? body.userId : "";
+        const member = await one<{ id: string }>("SELECT u.id FROM users u WHERE u.id=? AND (u.id=? OR EXISTS (SELECT 1 FROM memberships m WHERE m.collection_id=? AND m.user_id=u.id))", userId, current.owner_user_id, id);
+        if (!member) return errorResponse("請選擇群組成員。", 400);
+        const count = await one<{ count: number }>("SELECT count(*) count FROM personal_tags WHERE collection_id=? AND user_id=?", id, userId);
+        if ((count?.count ?? 0) >= 10) return errorResponse("這位成員在此群組已有 10 個標籤。", 400);
         const tagId = crypto.randomUUID();
         await db.batch([
-          db.prepare("INSERT INTO tags (id,collection_id,name,created_by,created_at) VALUES (?,?,?,?,?)").bind(tagId, id, name, admin.id, new Date().toISOString()),
-          audit(admin, "tag.create", "collection", id, null, { tagId, name }),
+          db.prepare("INSERT INTO personal_tags (id,collection_id,user_id,name,created_at) VALUES (?,?,?,?,?)").bind(tagId, id, userId, name, new Date().toISOString()),
+          audit(admin, "tag.create", "collection", id, null, { tagId, userId, name }),
         ]);
         return json({ id: tagId }, 201);
       }
       if (part === "tags" && partId && request.method === "DELETE") {
-        const before = await one<Row>("SELECT name FROM tags WHERE id=? AND collection_id=?", partId, id);
+        const before = await one<Row>("SELECT name,user_id userId FROM personal_tags WHERE id=? AND collection_id=?", partId, id);
         if (!before) return errorResponse("找不到標籤。", 404);
         await db.batch([
-          db.prepare("DELETE FROM tags WHERE id=? AND collection_id=?").bind(partId, id),
+          db.prepare("DELETE FROM personal_tags WHERE id=? AND collection_id=?").bind(partId, id),
           audit(admin, "tag.delete", "collection", id, before, null),
         ]);
         return json({ ok: true });
@@ -298,34 +302,23 @@ export async function handleAdminApi(request: Request, path: string): Promise<Re
           "SELECT o.id,o.author_id authorId,o.comment,o.score,o.created_at createdAt,o.updated_at updatedAt,coalesce(nullif(u.display_name,''),u.name,u.email) authorName,u.picture_url pictureUrl FROM review_opinions o LEFT JOIN users u ON u.id=o.author_id WHERE o.review_id=? ORDER BY o.created_at", id
         );
         const photos = await many<Row>("SELECT id,original_name name,content_type contentType FROM photos WHERE review_id=? ORDER BY created_at", id);
-        const tags = await many<Row>("SELECT t.id,t.name FROM review_tags rt JOIN tags t ON t.id=rt.tag_id WHERE rt.review_id=?", id);
-        const availableTags = await many<Row>("SELECT id,name FROM tags WHERE collection_id=? ORDER BY name", current.collectionId);
-        return json({ review: current, opinions, photos, tags, availableTags });
+        const labelUsers = await many<{ id: string; name: string; email: string }>("SELECT u.id,coalesce(nullif(u.display_name,''),u.name,u.email) name,u.email FROM users u WHERE u.id=(SELECT owner_user_id FROM collections WHERE id=?) OR EXISTS (SELECT 1 FROM memberships m WHERE m.collection_id=? AND m.user_id=u.id) ORDER BY u.email", current.collectionId, current.collectionId);
+        const statuses = await many<{ userId: string; status: string }>("SELECT user_id userId,status FROM personal_review_status WHERE review_id=?", id);
+        const reviewTags = await many<{ userId: string; tagId: string }>("SELECT user_id userId,tag_id tagId FROM personal_review_tags WHERE review_id=?", id);
+        const availableTags = await many<{ id: string; name: string; userId: string }>("SELECT id,name,user_id userId FROM personal_tags WHERE collection_id=? ORDER BY name", current.collectionId);
+        const labels = labelUsers.map((user) => ({ ...user, status: statuses.find((row) => row.userId === user.id)?.status ?? "none", tagIds: reviewTags.filter((row) => row.userId === user.id).map((row) => row.tagId) }));
+        return json({ review: current, opinions, photos, labels, availableTags });
       }
       if (request.method === "PATCH") {
         const body = await request.json().catch(() => null) as Record<string, unknown> | null;
         const parsed = reviewInput.safeParse(body);
         if (!parsed.success) return errorResponse("請檢查用餐資料。", 400);
-        if (body?.tagIds !== undefined && (!Array.isArray(body.tagIds) || body.tagIds.length > 10 || body.tagIds.some((value) => typeof value !== "string"))) return errorResponse("標籤資料無效。", 400);
-        const tagIds = body?.tagIds as string[] | undefined;
-        if (tagIds) {
-          const ids = [...new Set(tagIds)];
-          if (ids.length) {
-            const placeholders = ids.map(() => "?").join(",");
-            const found = await one<{ count: number }>("SELECT count(*) count FROM tags WHERE collection_id=? AND id IN (" + placeholders + ")", current.collectionId, ...ids);
-            if (found?.count !== ids.length) return errorResponse("標籤不屬於這個群組。", 400);
-          }
-        }
         const data = parsed.data;
         const operations = [
-          db.prepare("UPDATE reviews SET dining_date=?,restaurant=?,food=?,channel=?,status=?,order_number=?,amount_cents=?,district=?,updated_at=? WHERE id=?")
-            .bind(data.diningDate, data.restaurant, data.food, data.channel, data.status, data.orderNumber, data.amountCents, data.district, new Date().toISOString(), id),
+          db.prepare("UPDATE reviews SET dining_date=?,restaurant=?,food=?,channel=?,order_number=?,amount_cents=?,district=?,updated_at=? WHERE id=?")
+            .bind(data.diningDate, data.restaurant, data.food, data.channel, data.orderNumber, data.amountCents, data.district, new Date().toISOString(), id),
         ];
-        if (tagIds) {
-          operations.push(db.prepare("DELETE FROM review_tags WHERE review_id=?").bind(id));
-          for (const tagId of [...new Set(tagIds)]) operations.push(db.prepare("INSERT INTO review_tags (review_id,tag_id) VALUES (?,?)").bind(id, tagId));
-        }
-        operations.push(audit(admin, "review.update", "review", id, current, { ...data, tagIds }));
+        operations.push(audit(admin, "review.update", "review", id, current, data));
         await db.batch(operations);
         return json({ ok: true });
       }
@@ -341,6 +334,34 @@ export async function handleAdminApi(request: Request, path: string): Promise<Re
         if (env.BUCKET) await Promise.allSettled(photos.filter((photo) => !photo.data_base64).map((photo) => env.BUCKET!.delete(photo.object_key)));
         return json({ ok: true });
       }
+    }
+    const personalLabels = /^\/api\/admin\/reviews\/([^/]+)\/labels\/([^/]+)$/.exec(path);
+    if (personalLabels && request.method === "PATCH") {
+      const [, reviewId, userId] = personalLabels;
+      const target = await one<{ collectionId: string }>("SELECT collection_id collectionId FROM reviews WHERE id=?", reviewId);
+      if (!target) return errorResponse("找不到紀錄。", 404);
+      const member = await one<{ id: string }>("SELECT u.id FROM users u WHERE u.id=? AND (u.id=(SELECT owner_user_id FROM collections WHERE id=?) OR EXISTS (SELECT 1 FROM memberships m WHERE m.collection_id=? AND m.user_id=u.id))", userId, target.collectionId, target.collectionId);
+      if (!member) return errorResponse("這位用戶不是群組成員。", 400);
+      const body = await request.json().catch(() => null) as { status?: unknown; tagIds?: unknown } | null;
+      if (!["none", "favorite", "blacklist"].includes(String(body?.status))) return errorResponse("標記無效。", 400);
+      if (!Array.isArray(body?.tagIds) || body.tagIds.length > 10 || body.tagIds.some((value) => typeof value !== "string")) return errorResponse("標籤資料無效。", 400);
+      const ids = [...new Set(body.tagIds as string[])];
+      if (ids.length) {
+        const placeholders = ids.map(() => "?").join(",");
+        const found = await one<{ count: number }>("SELECT count(*) count FROM personal_tags WHERE collection_id=? AND user_id=? AND id IN (" + placeholders + ")", target.collectionId, userId, ...ids);
+        if (found?.count !== ids.length) return errorResponse("請選擇這位成員自己的標籤。", 400);
+      }
+      const before = await one<Row>("SELECT status FROM personal_review_status WHERE review_id=? AND user_id=?", reviewId, userId);
+      const statements = [
+        body.status === "none"
+          ? db.prepare("DELETE FROM personal_review_status WHERE review_id=? AND user_id=?").bind(reviewId, userId)
+          : db.prepare("INSERT INTO personal_review_status (review_id,user_id,status) VALUES (?,?,?) ON CONFLICT(review_id,user_id) DO UPDATE SET status=excluded.status").bind(reviewId, userId, body.status),
+        db.prepare("DELETE FROM personal_review_tags WHERE review_id=? AND user_id=?").bind(reviewId, userId),
+        ...ids.map((tagId) => db.prepare("INSERT INTO personal_review_tags (review_id,user_id,tag_id) VALUES (?,?,?)").bind(reviewId, userId, tagId)),
+        audit(admin, "review.labels.update", "review", reviewId, { userId, status: before?.status ?? "none" }, { userId, status: body.status, tagIds: ids }),
+      ];
+      await db.batch(statements);
+      return json({ ok: true });
     }
     const opinion = /^\/api\/admin\/opinions\/([^/]+)$/.exec(path);
     if (opinion && (request.method === "PATCH" || request.method === "DELETE")) {

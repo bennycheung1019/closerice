@@ -8,4 +8,4 @@ Closerice requires Google sign-in. Every review belongs to one shared collection
 
 When an AI assistant can use the save_closerice_review tool registered by the signed-in Closerice page, it may save a review only at the user's request. Confirm the selected collection before saving. Read only visible receipt details and ask the user for missing dates, restaurant names, food, and district; never invent a rating or comment. Do not upload or store order screenshots. If the assistant cannot use the signed-in page tool, provide a draft for the user to enter in Closerice. Do not ask the user to paste a login cookie into chat.
 
-Food photos are saved only when a person intentionally chooses them in the website form. Custom tags and favourite/blacklist status are separate, and each collection has its own tags.
+Food photos are saved only when a person intentionally chooses them in the website form. Favourite/blacklist marks and up to 10 custom tags are personal to each user within each collection; other collection members do not see them.
