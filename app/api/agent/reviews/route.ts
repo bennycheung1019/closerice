@@ -1,5 +1,5 @@
 import { getDb } from "../../../../db";
-import { reviews } from "../../../../db/schema";
+import { reviewOpinions, reviews } from "../../../../db/schema";
 import { errorResponse, reviewCreateInput, serverError } from "../../../../lib/reviews";
 import { getCollectionAccess } from "../../../../lib/auth";
 import { env } from "cloudflare:workers";
@@ -30,15 +30,18 @@ export async function POST(request: Request) {
     if (!access) return errorResponse("請先登入並選擇可編輯的群組。", 403);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    await getDb().insert(reviews).values({
+    const { comment, score, ...visit } = parsed.data;
+    await getDb().batch([getDb().insert(reviews).values({
       id,
       ownerId: access.user.id,
       collectionId: access.collectionId,
       createdBy: access.user.id,
-      ...parsed.data,
+      ...visit,
+      comment: "",
+      score: null,
       createdAt: now,
       updatedAt: now,
-    });
+    }), getDb().insert(reviewOpinions).values({ id: crypto.randomUUID(), reviewId: id, authorId: access.user.id, comment, score, createdAt: now, updatedAt: now })]);
     return Response.json({ id, url: env.PUBLIC_SITE_URL ?? new URL("/", request.url).toString() }, { status: 201 });
   } catch (error) {
     return serverError(error);

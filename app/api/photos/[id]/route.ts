@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getDb } from "../../../../db";
-import { photos } from "../../../../db/schema";
+import { photos, reviews } from "../../../../db/schema";
 import { errorResponse, serverError } from "../../../../lib/reviews";
 import { getCollectionAccess } from "../../../../lib/auth";
 
@@ -39,6 +39,8 @@ export async function DELETE(request: Request, context: Context) {
     const photo = await db.select().from(photos)
       .where(and(eq(photos.id, id), eq(photos.collectionId, access.collectionId))).get();
     if (!photo) return errorResponse("找不到相片。", 404);
+    const visit = await db.select({ createdBy: reviews.createdBy }).from(reviews).where(and(eq(reviews.id, photo.reviewId), eq(reviews.collectionId, access.collectionId))).get();
+    if (photo.ownerId !== access.user.id && visit?.createdBy !== access.user.id) return errorResponse("只能移除自己上載的相片。", 403);
     if (!photo.dataBase64) await env.BUCKET?.delete(photo.objectKey);
     await db.delete(photos).where(and(eq(photos.id, id), eq(photos.collectionId, access.collectionId)));
     return Response.json({ ok: true });

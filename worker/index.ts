@@ -1,5 +1,7 @@
 import { GET as listReviews, POST as createReview } from "../app/api/reviews/route";
 import { PATCH as updateReview, DELETE as deleteReview } from "../app/api/reviews/[id]/route";
+import { POST as createOpinion } from "../app/api/reviews/[id]/opinions/route";
+import { PATCH as updateOpinion, DELETE as deleteOpinion } from "../app/api/opinions/[id]/route";
 import { POST as createAgentReview } from "../app/api/agent/reviews/route";
 import { POST as uploadPhoto } from "../app/api/reviews/[id]/photos/route";
 import { GET as getPhoto, DELETE as deletePhoto } from "../app/api/photos/[id]/route";
@@ -21,10 +23,15 @@ async function api(request: Request, path: string): Promise<Response> {
   if (path === "/api/agent/reviews" && request.method === "POST") return createAgentReview(request);
   if (path === "/api/scan" && request.method === "POST") return scanReceipt(request);
   const review = /^\/api\/reviews\/([^/]+)$/.exec(path);
+  const visitOpinions = /^\/api\/reviews\/([^/]+)\/opinions$/.exec(path);
+  const opinion = /^\/api\/opinions\/([^/]+)$/.exec(path);
   const reviewPhoto = /^\/api\/reviews\/([^/]+)\/photos$/.exec(path);
   const photo = /^\/api\/photos\/([^/]+)$/.exec(path);
   if (review && request.method === "PATCH") return updateReview(request, { params: Promise.resolve({ id: review[1] }) });
   if (review && request.method === "DELETE") return deleteReview(request, { params: Promise.resolve({ id: review[1] }) });
+  if (visitOpinions && request.method === "POST") return createOpinion(request, { params: Promise.resolve({ id: visitOpinions[1] }) });
+  if (opinion && request.method === "PATCH") return updateOpinion(request, { params: Promise.resolve({ id: opinion[1] }) });
+  if (opinion && request.method === "DELETE") return deleteOpinion(request, { params: Promise.resolve({ id: opinion[1] }) });
   if (reviewPhoto && request.method === "POST") return uploadPhoto(request, { params: Promise.resolve({ id: reviewPhoto[1] }) });
   if (photo && request.method === "GET") return getPhoto(request, { params: Promise.resolve({ id: photo[1] }) });
   if (photo && request.method === "DELETE") return deletePhoto(request, { params: Promise.resolve({ id: photo[1] }) });

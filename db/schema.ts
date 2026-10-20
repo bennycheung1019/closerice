@@ -5,6 +5,7 @@ export const users = sqliteTable("users", {
   googleSubject: text("google_subject").notNull().unique(),
   email: text("email").notNull(),
   name: text("name").notNull().default(""),
+  pictureUrl: text("picture_url"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -64,6 +65,16 @@ export const reviews = sqliteTable("reviews", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [index("idx_reviews_owner_date").on(table.ownerId, table.diningDate), index("idx_reviews_collection_date").on(table.collectionId, table.diningDate)]);
+
+export const reviewOpinions = sqliteTable("review_opinions", {
+  id: text("id").primaryKey(),
+  reviewId: text("review_id").notNull().references(() => reviews.id, { onDelete: "cascade" }),
+  authorId: text("author_id").references(() => users.id),
+  comment: text("comment").notNull().default(""),
+  score: integer("score"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [index("idx_review_opinions_review").on(table.reviewId), uniqueIndex("idx_review_opinions_author").on(table.reviewId, table.authorId)]);
 
 export const photos = sqliteTable("photos", {
   id: text("id").primaryKey(),

@@ -4,7 +4,7 @@ import { getDb } from "../db";
 import { collections, memberships, sessions, users } from "../db/schema";
 
 export type CollectionRole = "owner" | "editor" | "viewer";
-export type SessionUser = { id: string; email: string; name: string };
+export type SessionUser = { id: string; email: string; name: string; pictureUrl: string | null };
 export type CollectionAccess = { user: SessionUser; collectionId: string; role: CollectionRole };
 
 const sessionCookie = "__Secure-closerice_session";
@@ -61,7 +61,7 @@ export async function getSessionUser(request: Request): Promise<SessionUser | nu
   if (!token || token.length > 128) return null;
   const hash = await sha256(token);
   const db = getDb();
-  const row = await db.select({ id: users.id, email: users.email, name: users.name }).from(sessions)
+  const row = await db.select({ id: users.id, email: users.email, name: users.name, pictureUrl: users.pictureUrl }).from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
     .where(and(eq(sessions.tokenHash, hash), gt(sessions.expiresAt, Date.now()))).get();
   return row ?? null;
@@ -98,13 +98,13 @@ export async function getOwnerAccess(request: Request): Promise<CollectionAccess
   return access?.role === "owner" ? access : null;
 }
 
-async function verifyGoogleIdToken(value: string, nonce: string): Promise<{ sub: string; email: string; name: string }> {
+async function verifyGoogleIdToken(value: string, nonce: string): Promise<{ sub: string; email: string; name: string; pictureUrl: string | null }> {
   if (value.length > 12_000) throw new Error("Google ID token too large");
   const [encodedHeader, encodedPayload, encodedSignature, extra] = value.split(".");
   if (!encodedHeader || !encodedPayload || !encodedSignature || extra) throw new Error("Malformed Google ID token");
   const header = JSON.parse(new TextDecoder().decode(decodeBase64Url(encodedHeader))) as { alg?: string; kid?: string };
   const payload = JSON.parse(new TextDecoder().decode(decodeBase64Url(encodedPayload))) as {
-    iss?: string; aud?: string; exp?: number; nonce?: string; sub?: string; email?: string; email_verified?: boolean; name?: string;
+    iss?: string; aud?: string; exp?: number; nonce?: string; sub?: string; email?: string; email_verified?: boolean; name?: string; picture?: string;
   };
   if (header.alg !== "RS256" || !header.kid || !payload.sub || !payload.email || payload.email_verified !== true ||
     payload.aud !== env.GOOGLE_CLIENT_ID || !["https://accounts.google.com", "accounts.google.com"].includes(payload.iss ?? "") ||
@@ -120,7 +120,8 @@ async function verifyGoogleIdToken(value: string, nonce: string): Promise<{ sub:
   const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
   const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, decodeBase64Url(encodedSignature), new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`));
   if (!valid) throw new Error("Invalid Google ID token signature");
-  return { sub: payload.sub, email: payload.email.toLowerCase(), name: payload.name?.slice(0, 120) ?? "" };
+  const pictureUrl = payload.picture && /^https:\/\/(?:[a-z0-9-]+\.)*(?:googleusercontent\.com|google\.com)\//i.test(payload.picture) ? payload.picture.slice(0, 1000) : null;
+  return { sub: payload.sub, email: payload.email.toLowerCase(), name: payload.name?.slice(0, 120) ?? "", pictureUrl };
 }
 
 export async function startGoogleLogin(): Promise<Response> {
@@ -158,8 +159,8 @@ export async function finishGoogleLogin(request: Request): Promise<Response> {
     const db = getDb();
     const existing = await db.select({ id: users.id }).from(users).where(eq(users.googleSubject, identity.sub)).get();
     const userId = existing?.id ?? crypto.randomUUID();
-    if (existing) await db.update(users).set({ email: identity.email, name: identity.name }).where(eq(users.id, userId));
-    else await db.insert(users).values({ id: userId, googleSubject: identity.sub, email: identity.email, name: identity.name, createdAt: new Date().toISOString() });
+    if (existing) await db.update(users).set({ email: identity.email, name: identity.name, pictureUrl: identity.pictureUrl }).where(eq(users.id, userId));
+    else await db.insert(users).values({ id: userId, googleSubject: identity.sub, email: identity.email, name: identity.name, pictureUrl: identity.pictureUrl, createdAt: new Date().toISOString() });
     if (env.INITIAL_OWNER_EMAIL?.toLowerCase() === identity.email) {
       const claimed = await db.update(collections).set({ ownerUserId: userId }).where(and(eq(collections.id, "legacy-home"), isNull(collections.ownerUserId))).returning({ id: collections.id });
       if (claimed.length) console.log("Initial Home collection owner claimed");
