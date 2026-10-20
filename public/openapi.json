@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Closerice collection reviews API",
-    "version": "2.0.0",
-    "description": "Authenticated food reviews. Requests require a signed-in Closerice browser session and the X-Collection-Id header for a collection the user belongs to. Writes require owner or editor permission."
+    "version": "2.1.0",
+    "description": "Authenticated Closerice meal visits and individual opinions. Requests require a signed-in browser session and X-Collection-Id. Group owners and editors may create visits and opinions; each member may change only their own opinion."
   },
   "servers": [
     {
@@ -24,7 +24,7 @@
       ],
       "get": {
         "operationId": "listReviews",
-        "summary": "List the shared reviews",
+        "summary": "List meal visits with their individual opinions",
         "responses": {
           "200": {
             "description": "Review list",
@@ -58,8 +58,8 @@
       ],
       "post": {
         "operationId": "createReview",
-        "summary": "Save one text-only review",
-        "description": "Read receipt screenshots with the agent's own image capability, collect the user's comment and score, then save the extracted data in one JSON request. Do not upload the receipt screenshot. Food photos are attached only when a person intentionally selects them in the website form.",
+        "summary": "Create a meal visit with the signed-in member’s opinion",
+        "description": "Read receipt screenshots with the agent’s own image capability, collect the user’s comment and score, then save a new meal visit and that user’s opinion in one JSON request. For a meal visit already in the collection, use POST /api/reviews/{id}/opinions instead. Do not upload the receipt screenshot.",
         "requestBody": {
           "required": true,
           "content": {
@@ -122,8 +122,8 @@
       ],
       "patch": {
         "operationId": "updateReview",
-        "summary": "Replace an existing review's fields",
-        "description": "Only use when the user explicitly asks to edit this review. Supply all review fields as JSON.",
+        "summary": "Edit shared meal details",
+        "description": "Only the member who created this meal visit may edit its date, restaurant, food, location, and other shared details. This endpoint does not change any person’s comment or stars. To edit those, use PATCH /api/opinions/{id}.",
         "requestBody": {
           "required": true,
           "content": {
@@ -148,13 +148,106 @@
       },
       "delete": {
         "operationId": "deleteReview",
-        "summary": "Delete a review and its images",
-        "description": "Only use when the user explicitly asks to delete this review.",
+        "summary": "Delete a meal visit created by the signed-in member",
+        "description": "Only the visit creator may delete it, and only if no other member has added an opinion. Deletion also removes its photos.",
         "responses": {
           "200": {
             "description": "Deleted"
           },
           "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/reviews/{id}/opinions": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/collectionId"
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "addMyOpinion",
+        "summary": "Add my opinion to an existing meal visit",
+        "description": "One opinion per signed-in member per visit. The author is always taken from the browser session.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpinionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Opinion added"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/opinions/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/collectionId"
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "operationId": "updateMyOpinion",
+        "summary": "Edit my own comment and stars",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpinionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Opinion updated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMyOpinion",
+        "summary": "Delete my own opinion",
+        "responses": {
+          "200": {
+            "description": "Opinion deleted"
+          },
+          "403": {
             "$ref": "#/components/responses/Error"
           }
         }
@@ -442,11 +535,25 @@
                     }
                   }
                 }
+              },
+              "opinions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Opinion"
+                }
+              },
+              "createdBy": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Google user ID of the member who created the meal visit."
               }
             },
             "required": [
               "id",
-              "photos"
+              "photos",
+              "opinions"
             ]
           }
         ]
@@ -469,21 +576,6 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 1000
-          },
-          "comment": {
-            "type": "string",
-            "maxLength": 3000,
-            "default": "",
-            "description": "Only the user's own opinion; never infer it from a receipt."
-          },
-          "score": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 1,
-            "maximum": 5,
-            "default": null
           },
           "channel": {
             "type": "string",
@@ -687,6 +779,79 @@
           "restaurant",
           "food",
           "channel"
+        ]
+      },
+      "OpinionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "type": "string",
+            "maxLength": 3000,
+            "default": ""
+          },
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 5,
+            "default": null
+          }
+        },
+        "description": "At least one of comment or score must be supplied."
+      },
+      "Opinion": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OpinionInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "reviewId": {
+                "type": "string"
+              },
+              "authorId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "authorName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "authorPictureUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uri"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "reviewId",
+              "authorId",
+              "authorName",
+              "authorPictureUrl"
+            ]
+          }
         ]
       }
     },
