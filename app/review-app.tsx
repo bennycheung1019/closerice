@@ -123,6 +123,12 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
   const [scanError, setScanError] = useState("");
 
   useEffect(() => {
+    if (!message) return;
+    const timeout = window.setTimeout(() => setMessage(""), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
+
+  useEffect(() => {
     if (!viewingPhotos) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setViewingPhotos(null);
@@ -360,8 +366,10 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
         const uploaded = await collectionFetch(`/api/reviews/${reviewId}/photos`, collection.id, { method: "POST", body: form });
         if (!uploaded.ok) { const issue = await uploaded.json().catch(() => ({})) as { error?: string }; uploadError = issue.error ?? "部分相片未能上載。"; break; }
       }
-      setOpen(false); setFiles([]); setDraft(blankDraft()); setEditingId(null); setMessage(uploadError ? `紀錄已儲存。${uploadError}` : "紀錄已儲存。");
+      const wasEditing = Boolean(editingId);
+      setOpen(false); setFiles([]); setDraft(blankDraft()); setEditingId(null); setMessage(wasEditing ? "紀錄已更新。" : "紀錄已儲存。");
       await loadReviews();
+      if (uploadError) setError(uploadError);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "儲存失敗，請稍後再試。"); }
     finally { setSaving(false); }
   }
@@ -420,7 +428,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
     <header className="topbar"><div className="brand"><img className="brand-logo" src={pageAsset("brand-logo.png?v=3")} alt="Closerice" /></div><div className="review-head-actions"><select className="header-group-select" aria-label="切換食評群組" title="切換食評群組" value={collection.id} onChange={(event) => onSelectCollection(event.target.value)}>{collections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><a className="settings-link" href="/closerice/settings/"><Settings size={17} aria-hidden="true" />設定</a></div></header>
     <section className="intro"><div><p className="eyebrow">{collection.name} · 食評筆記</p><h1>一齊記低每一餐的味道。</h1><p>由外賣到堂食，下一次落單之前有得參考。</p></div>{collection.role !== "viewer" && <button className="button primary" onClick={startNew}>＋ 新增紀錄</button>}</section>
     {!selectedGroup && <section className="mobile-page-head" aria-label="目前頁面"><p className="eyebrow">{collection.name} · 食評筆記</p><h1>{statusFilter === "favorite" ? "我的最愛" : "餐廳紀錄"}</h1><p>{loading ? "正在讀取…" : statusFilter === "favorite" ? `${restaurantGroups.length} 間餐廳有最愛食評` : `${allRestaurantGroups.length} 間餐廳 · ${reviews.length} 筆食評`}</p></section>}
-    {message && <div className="notice" role="status">{message} <button className="icon-button" onClick={() => setMessage("")} aria-label="關閉提示">×</button></div>}
+    {message && <div className="toast" role="status">{message}</div>}
     {error && !open && <div className="notice error" role="alert">{error}</div>}
     {selectedGroup ? <section className="restaurant-detail" aria-label={`${selectedGroup.visits[0].restaurant}的食評`}>
       <div className="restaurant-detail-head">
