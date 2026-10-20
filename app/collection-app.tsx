@@ -8,7 +8,7 @@ import SettingsPage from "./settings-page";
 
 export type CollectionSummary = { id: string; name: string; role: "owner" | "editor" | "viewer" };
 export type CollectionTag = { id: string; name: string; createdBy: string };
-type Session = { user: { id: string; email: string; name: string }; collections: CollectionSummary[]; pendingTransfers: Array<{ collectionId: string; name: string }> };
+type Session = { user: { id: string; email: string; name: string; googleName: string; displayName: string | null; pictureUrl: string | null }; collections: CollectionSummary[]; pendingTransfers: Array<{ collectionId: string; name: string }> };
 const settingsPage = typeof window !== "undefined" && /^\/closerice\/settings(?:\/|\/index\.html)?$/.test(window.location.pathname);
 
 export default function CollectionApp() {

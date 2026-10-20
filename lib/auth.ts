@@ -1,10 +1,10 @@
 import { env } from "cloudflare:workers";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { collections, memberships, sessions, users } from "../db/schema";
 
 export type CollectionRole = "owner" | "editor" | "viewer";
-export type SessionUser = { id: string; email: string; name: string; pictureUrl: string | null };
+export type SessionUser = { id: string; email: string; name: string; googleName: string; displayName: string | null; pictureUrl: string | null };
 export type CollectionAccess = { user: SessionUser; collectionId: string; role: CollectionRole };
 
 const sessionCookie = "__Secure-closerice_session";
@@ -61,7 +61,9 @@ export async function getSessionUser(request: Request): Promise<SessionUser | nu
   if (!token || token.length > 128) return null;
   const hash = await sha256(token);
   const db = getDb();
-  const row = await db.select({ id: users.id, email: users.email, name: users.name, pictureUrl: users.pictureUrl }).from(sessions)
+  const row = await db.select({ id: users.id, email: users.email,
+    name: sql<string>`coalesce(nullif(${users.displayName}, ''), ${users.name})`,
+    googleName: users.name, displayName: users.displayName, pictureUrl: users.pictureUrl }).from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
     .where(and(eq(sessions.tokenHash, hash), gt(sessions.expiresAt, Date.now()))).get();
   return row ?? null;
