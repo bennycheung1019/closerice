@@ -4,6 +4,7 @@ import { getDb } from "../db";
 import { collections, invites, memberships, ownershipTransfers, personalTags, photos, reviews, siteSettings, users } from "../db/schema";
 import { getCollectionAccess, getSessionUser, isSiteAdmin, newInviteToken, refreshSession, tokenHash } from "./auth";
 import { errorResponse, serverError } from "./reviews";
+import { defaultTagColor, tagColors } from "./tag-colors";
 
 type MemberRole = "editor" | "viewer";
 const validRole = (value: unknown): value is MemberRole => value === "editor" || value === "viewer";
@@ -213,24 +214,40 @@ export async function handleTagsApi(request: Request, path: string): Promise<Res
     const access = await getCollectionAccess(request);
     if (!access) return errorResponse("請登入並選擇有權限的群組。", 403);
     const db = getDb();
+    await ensureDefaultPersonalTags(access.collectionId, access.user.id);
     if (path === "/api/tags" && request.method === "GET") {
-      const rows = await db.select({ id: personalTags.id, name: personalTags.name }).from(personalTags)
-        .where(and(eq(personalTags.collectionId, access.collectionId), eq(personalTags.userId, access.user.id)));
+      const rows = await db.select({ id: personalTags.id, name: personalTags.name, color: personalTags.color }).from(personalTags)
+        .where(and(eq(personalTags.collectionId, access.collectionId), eq(personalTags.userId, access.user.id)))
+        .orderBy(sql`CASE ${personalTags.name} WHEN '☆ 最愛' THEN 0 WHEN '⊘ 黑名單' THEN 1 ELSE 2 END`, personalTags.createdAt);
       return Response.json({ tags: rows.map((row) => ({ ...row, createdBy: access.user.id })) }, { headers: noStore });
     }
     if (path === "/api/tags" && request.method === "POST") {
-      const body = await request.json().catch(() => null) as { name?: unknown } | null;
+      const body = await request.json().catch(() => null) as { name?: unknown; color?: unknown } | null;
       const name = typeof body?.name === "string" ? body.name.trim() : "";
       if (!name || name.length > 24) return errorResponse("標籤名稱需為 1 至 24 字。", 400);
+      const color = body?.color === undefined ? defaultTagColor : body.color;
+      if (typeof color !== "string" || !tagColors.includes(color as typeof tagColors[number])) return errorResponse("請選擇有效的標籤顏色。", 400);
       const count = await db.select({ id: personalTags.id }).from(personalTags)
         .where(and(eq(personalTags.collectionId, access.collectionId), eq(personalTags.userId, access.user.id)));
       if (count.length >= 10) return errorResponse("你在每個群組最多可建立 10 個標籤。", 400);
       const id = crypto.randomUUID();
-      try { await db.insert(personalTags).values({ id, collectionId: access.collectionId, userId: access.user.id, name, createdAt: new Date().toISOString() }); }
+      try { await db.insert(personalTags).values({ id, collectionId: access.collectionId, userId: access.user.id, name, color, createdAt: new Date().toISOString() }); }
       catch { return errorResponse("這個標籤已存在。", 409); }
-      return Response.json({ id, name }, { status: 201 });
+      return Response.json({ id, name, color }, { status: 201 });
     }
     const match = /^\/api\/tags\/([^/]+)$/.exec(path);
+    if (match && request.method === "PATCH") {
+      const body = await request.json().catch(() => null) as { name?: unknown; color?: unknown } | null;
+      const name = typeof body?.name === "string" ? body.name.trim() : "";
+      if (!name || name.length > 24) return errorResponse("標籤名稱需為 1 至 24 字。", 400);
+      const color = body?.color;
+      if (typeof color !== "string" || !tagColors.includes(color as typeof tagColors[number])) return errorResponse("請選擇有效的標籤顏色。", 400);
+      try {
+        const changed = await db.update(personalTags).set({ name, color }).where(and(eq(personalTags.id, match[1]), eq(personalTags.collectionId, access.collectionId), eq(personalTags.userId, access.user.id))).returning({ id: personalTags.id });
+        if (!changed.length) return errorResponse("找不到標籤。", 404);
+      } catch { return errorResponse("這個標籤名稱已存在。", 409); }
+      return Response.json({ id: match[1], name, color });
+    }
     if (match && request.method === "DELETE") {
       const tag = await db.select({ id: personalTags.id }).from(personalTags)
         .where(and(eq(personalTags.id, match[1]), eq(personalTags.collectionId, access.collectionId), eq(personalTags.userId, access.user.id))).get();
@@ -242,6 +259,17 @@ export async function handleTagsApi(request: Request, path: string): Promise<Res
   } catch (error) {
     return serverError(error);
   }
+}
+
+export async function ensureDefaultPersonalTags(collectionId: string, userId: string): Promise<void> {
+  const db = env.DB!;
+  const initialized = await db.prepare("SELECT 1 FROM personal_tag_defaults WHERE collection_id=? AND user_id=?").bind(collectionId, userId).first();
+  if (initialized) return;
+  await db.batch([
+    db.prepare("INSERT OR IGNORE INTO personal_tags (id,collection_id,user_id,name,color,created_at) SELECT lower(hex(randomblob(16))),?,?,'☆ 最愛','#f5c542',? WHERE NOT EXISTS (SELECT 1 FROM personal_tag_defaults WHERE collection_id=? AND user_id=?) AND (SELECT count(*) FROM personal_tags WHERE collection_id=? AND user_id=?)<10").bind(collectionId, userId, new Date().toISOString(), collectionId, userId, collectionId, userId),
+    db.prepare("INSERT OR IGNORE INTO personal_tags (id,collection_id,user_id,name,color,created_at) SELECT lower(hex(randomblob(16))),?,?,'⊘ 黑名單','#242b28',? WHERE NOT EXISTS (SELECT 1 FROM personal_tag_defaults WHERE collection_id=? AND user_id=?) AND (SELECT count(*) FROM personal_tags WHERE collection_id=? AND user_id=?)<10").bind(collectionId, userId, new Date().toISOString(), collectionId, userId, collectionId, userId),
+    db.prepare("INSERT OR IGNORE INTO personal_tag_defaults (collection_id,user_id) VALUES (?,?)").bind(collectionId, userId),
+  ]);
 }
 
 export async function validTagIds(collectionId: string, userId: string, candidate: unknown): Promise<string[] | null> {

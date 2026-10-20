@@ -15,7 +15,7 @@ type Group = { id: string; name: string; ownerUserId: string | null; ownerName: 
 type Member = { id: string; email: string; name: string; pictureUrl: string | null; role: "editor" | "viewer"; disabledAt: number | null };
 type GroupDetail = { collection: { id: string; name: string; owner_user_id: string | null }; members: Member[]; invites: Array<{ id: string; email: string; role: string; expiresAt: number }>; tags: Array<{ id: string; name: string; userId: string }>; tagUsers: Array<{ id: string; name: string; email: string }> };
 type Review = { id: string; collectionId: string; collectionName: string; restaurant: string; food: string; diningDate: string; channel: string; status: string; amountCents: number | null; orderNumber: string; district: string | null; createdBy: string | null; creatorName: string | null; opinionCount: number; averageScore: number | null };
-type ReviewDetail = { review: { id: string; collectionId: string; restaurant: string; food: string; diningDate: string; channel: string; status: string; amountCents: number | null; orderNumber: string; district: string | null }; opinions: Array<{ id: string; authorId: string | null; authorName: string | null; comment: string; score: number | null }>; photos: Array<{ id: string; name: string; contentType: string }>; labels: Array<{ id: string; name: string; email: string; status: string; tagIds: string[] }>; availableTags: Array<{ id: string; name: string; userId: string }> };
+type ReviewDetail = { review: { id: string; collectionId: string; restaurant: string; food: string; diningDate: string; channel: string; status: string; amountCents: number | null; orderNumber: string; district: string | null }; opinions: Array<{ id: string; authorId: string | null; authorName: string | null; comment: string; score: number | null; selectedFoods: string | null }>; photos: Array<{ id: string; name: string; contentType: string }>; labels: Array<{ id: string; name: string; email: string; tagIds: string[] }>; availableTags: Array<{ id: string; name: string; userId: string }> };
 type ListResult<T> = { nextOffset: number | null } & T;
 const sections: Array<{ id: Section; label: string }> = [
   { id: "overview", label: "概覽" }, { id: "users", label: "用戶" }, { id: "collections", label: "食評群組" }, { id: "reviews", label: "食評" }, { id: "settings", label: "網站設定" },
@@ -211,7 +211,7 @@ function ReviewEditor({ id, busy, onClose, onChange }: {
       <div className="admin-form-grid"><label className="admin-field">訂單編號<input maxLength={80} value={form.orderNumber} onChange={(event) => update("orderNumber", event.target.value)} /></label><label className="admin-field">實付金額 HK$<input type="number" min="0" step="0.01" value={form.amountCents === null ? "" : (form.amountCents / 100).toFixed(2)} onChange={(event) => update("amountCents", event.target.value === "" ? null : Math.round(Number(event.target.value) * 100))} /></label></div>
       <button className="button primary" disabled={busy}>儲存紀錄</button>
     </form>
-    <section className="admin-subsection"><h3>成員的個人標記</h3>{data.labels.map((label) => <PersonalLabelEditor key={label.id + label.status + label.tagIds.join(",")} label={label} tags={data.availableTags.filter((tag) => tag.userId === label.id)} busy={busy} onSave={async (value) => { await act(() => write("/api/admin/reviews/" + id + "/labels/" + label.id, "PATCH", value), "個人標記已更新。"); }} />)}</section>
+    <section className="admin-subsection"><h3>成員的個人標記</h3>{data.labels.map((label) => <PersonalLabelEditor key={label.id + label.tagIds.join(",")} label={label} tags={data.availableTags.filter((tag) => tag.userId === label.id)} busy={busy} onSave={async (value) => { await act(() => write("/api/admin/reviews/" + id + "/labels/" + label.id, "PATCH", value), "個人標記已更新。"); }} />)}</section>
     <section className="admin-subsection"><h3>成員評語與評分</h3>{data.opinions.length ? data.opinions.map((opinion) => <OpinionEditor key={opinion.id} opinion={opinion} busy={busy} onSave={async (value) => { await act(() => write("/api/admin/opinions/" + opinion.id, "PATCH", value), "評語已更新。"); }} onDelete={async () => { await act(() => write("/api/admin/opinions/" + opinion.id, "DELETE"), "評語已刪除。"); }} />) : <p className="admin-muted">這筆紀錄沒有評語。</p>}</section>
     <section className="admin-subsection"><h3>食物相片</h3>{data.photos.length ? <div className="admin-photo-grid">{data.photos.map((photo) => <figure key={photo.id}><img src={apiUrl("/api/admin/photos/" + photo.id)} alt={photo.name} /><figcaption>{photo.name}</figcaption><button className="admin-text-danger" type="button" onClick={() => { if (window.confirm("刪除這張食物相片？")) void act(() => write("/api/admin/photos/" + photo.id, "DELETE"), "相片已刪除。"); }}>刪除相片</button></figure>)}</div> : <p className="admin-muted">沒有食物相片。</p>}</section>
     <section className="admin-danger-box"><h3>刪除整筆紀錄</h3><p>此操作會連同所有成員評語及相片永久刪除。請輸入餐廳名稱。</p><input value={deleteName} onChange={(event) => setDeleteName(event.target.value)} placeholder={data.review.restaurant} /><button className="button danger" disabled={busy || deleteName !== data.review.restaurant} onClick={() => void act(() => write("/api/admin/reviews/" + id, "DELETE"), "紀錄已刪除。", true)}>永久刪除紀錄</button></section>
@@ -219,15 +219,13 @@ function ReviewEditor({ id, busy, onClose, onChange }: {
 }
 function PersonalLabelEditor({ label, tags, busy, onSave }: {
   label: ReviewDetail["labels"][number]; tags: ReviewDetail["availableTags"]; busy: boolean;
-  onSave: (value: { status: string; tagIds: string[] }) => Promise<void>;
+  onSave: (value: { tagIds: string[] }) => Promise<void>;
 }) {
-  const [status, setStatus] = useState(label.status);
   const [tagIds, setTagIds] = useState(label.tagIds);
-  return <form className="admin-opinion" onSubmit={(event) => { event.preventDefault(); void onSave({ status, tagIds }); }}>
+  return <form className="admin-opinion" onSubmit={(event) => { event.preventDefault(); void onSave({ tagIds }); }}>
     <strong>{label.name} · {label.email}</strong>
-    <label className="admin-field">標記<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="none">無</option><option value="favorite">最愛</option><option value="blacklist">黑名單</option></select></label>
-    {tags.length > 0 && <div className="admin-field"><span>自訂標籤</span><div className="admin-chip-list">{tags.map((tag) => <label className="admin-chip" key={tag.id}><input type="checkbox" checked={tagIds.includes(tag.id)} onChange={(event) => setTagIds(event.target.checked ? [...tagIds, tag.id] : tagIds.filter((id) => id !== tag.id))} />{tag.name}</label>)}</div></div>}
-    <button className="button secondary" disabled={busy || (status === label.status && tagIds.length === label.tagIds.length && tagIds.every((id) => label.tagIds.includes(id)))}>儲存個人標記</button>
+    {tags.length > 0 && <div className="admin-field"><span>個人標籤</span><div className="admin-chip-list">{tags.map((tag) => <label className="admin-chip" key={tag.id}><input type="checkbox" checked={tagIds.includes(tag.id)} onChange={(event) => setTagIds(event.target.checked ? [...tagIds, tag.id] : tagIds.filter((id) => id !== tag.id))} />{tag.name}</label>)}</div></div>}
+    <button className="button secondary" disabled={busy || (tagIds.length === label.tagIds.length && tagIds.every((id) => label.tagIds.includes(id)))}>儲存個人標記</button>
   </form>;
 }
 

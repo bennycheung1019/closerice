@@ -6,21 +6,23 @@ import { apiUrl, pageAsset } from "../lib/client-urls";
 import { collectionFetch } from "../lib/client-api";
 import { districtNames, districtValues, isDistrict, type District } from "../lib/districts";
 import { normalizedRestaurantName, restaurantNameSimilarity } from "../lib/restaurant-match";
+import { splitFoodItems } from "../lib/food-items";
+import { defaultTagColor, tagColors, tagStyle } from "../lib/tag-colors";
 import LocationPicker from "./location-picker";
 import type { CollectionSummary, CollectionTag } from "./collection-app";
 
 type Channel = "keeta" | "foodpanda" | "takeaway" | "dine_in";
 type Status = "none" | "favorite" | "blacklist";
 type Photo = { id: string; url: string; name: string };
-type Opinion = { id: string; reviewId: string; authorId: string | null; authorName: string | null; authorPictureUrl: string | null; comment: string; score: number | null; createdAt: string; updatedAt: string };
+type Opinion = { id: string; reviewId: string; authorId: string | null; authorName: string | null; authorPictureUrl: string | null; comment: string; score: number | null; selectedFoods: string[] | null; createdAt: string; updatedAt: string };
 type Review = {
   id: string; diningDate: string; restaurant: string; food: string; comment: string;
   score: number | null; channel: Channel; status: Status; orderNumber: string;
   amountCents: number | null; district: District | null; photos: Photo[]; tagIds: string[]; opinions: Opinion[]; createdBy: string | null;
 };
-type Draft = Omit<Review, "id" | "photos" | "district" | "opinions" | "createdBy"> & { district: District | "" };
+type Draft = Omit<Review, "id" | "photos" | "district" | "opinions" | "createdBy"> & { district: District | ""; selectedFoods: string[] };
 type ToolInput = Pick<Draft, "diningDate" | "restaurant" | "food" | "comment" | "channel"> & {
-  score: number; district: District; orderNumber?: string; amountHKD?: number; status?: Status;
+  score: number; district: District; orderNumber?: string; amountHKD?: number; selectedFoods?: string[];
 };
 type ScanResult = { restaurant: string; food: string; diningDate: string | null; channel: Channel | null; orderNumber: string; amountCents: number | null; district: District | null; locationText: string };
 type ModelContext = { registerTool: (tool: { name: string; description: string; inputSchema: object; annotations?: object; execute: (input: ToolInput) => Promise<object> }) => Promise<unknown> };
@@ -38,7 +40,7 @@ const todayHK = () => {
   const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
-const blankDraft = (): Draft => ({ diningDate: todayHK(), restaurant: "", food: "", comment: "", score: null, channel: "dine_in", status: "none", orderNumber: "", amountCents: null, district: "", tagIds: [] });
+const blankDraft = (): Draft => ({ diningDate: todayHK(), restaurant: "", food: "", comment: "", score: null, channel: "dine_in", status: "none", orderNumber: "", amountCents: null, district: "", tagIds: [], selectedFoods: [] });
 const money = (cents: number | null) => cents === null ? "" : `HK$${(cents / 100).toFixed(2)}`;
 const ratingSummary = (visits: Review[]) => {
   const ratings = visits.flatMap((visit) => visit.opinions.map((opinion) => opinion.score)).filter((score): score is number => score !== null);
@@ -59,6 +61,16 @@ function groupByRestaurant(visits: Review[]): RestaurantGroup[] {
     else groups.set(key, { key, visits: [visit] });
   }
   return [...groups.values()];
+}
+
+function FoodPicker({ food, selected, onChange }: { food: string; selected: string[]; onChange: (value: string[]) => void }) {
+  const items = splitFoodItems(food);
+  if (!items.length) return null;
+  return <fieldset className="food-picker"><legend>今次評價的食物</legend><p>勾選你想評價的食物。</p><div className="food-picker-options">{items.map((item) => <label key={item}><input type="checkbox" checked={selected.includes(item)} onChange={() => onChange(selected.includes(item) ? selected.filter((value) => value !== item) : [...selected, item])} /><span>{item}</span></label>)}</div></fieldset>;
+}
+
+function TagPicker({ tags, selected, onChange, onManage }: { tags: CollectionTag[]; selected: string[]; onChange: (value: string[]) => void; onManage: () => void }) {
+  return <div className="field"><div className="tag-picker-title"><span>我的標記</span><button type="button" className="button secondary tag-manage-trigger" onClick={onManage}>＋ 自訂標籤</button></div><div className="tag-options">{tags.map((tag) => <button type="button" key={tag.id} className={`tag-choice ${selected.includes(tag.id) ? "selected" : ""}`} style={selected.includes(tag.id) ? tagStyle(tag.color) : undefined} aria-pressed={selected.includes(tag.id)} onClick={() => onChange(selected.includes(tag.id) ? selected.filter((id) => id !== tag.id) : [...selected, tag.id])}>{tag.name}</button>)}</div></div>;
 }
 
 async function compressFoodPhoto(file: File): Promise<Blob> {
@@ -82,13 +94,14 @@ async function compressFoodPhoto(file: File): Promise<Blob> {
   }
 }
 
-export default function ReviewApp({ collection, collections, onSelectCollection, user, tags, onCreateTag, onDeleteTag }: {
+export default function ReviewApp({ collection, collections, onSelectCollection, user, tags, onCreateTag, onUpdateTag, onDeleteTag }: {
   collection: CollectionSummary;
   collections: CollectionSummary[];
   onSelectCollection: (id: string) => void;
   user: { id: string; email: string; name: string };
   tags: CollectionTag[];
-  onCreateTag: (name: string) => Promise<string>;
+  onCreateTag: (name: string, color: string) => Promise<string>;
+  onUpdateTag: (id: string, name: string, color: string) => Promise<void>;
   onDeleteTag: (id: string) => Promise<void>;
 }) {
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -96,7 +109,6 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "favorite" ? "favorite" : "all");
   const [channelFilter, setChannelFilter] = useState("all");
   const [districtFilter, setDistrictFilter] = useState("all");
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
@@ -105,11 +117,16 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
   const [openReviewMenuId, setOpenReviewMenuId] = useState<string | null>(null);
   const [recentDistricts, setRecentDistricts] = useState<District[]>(readRecentDistricts);
   const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState<string>(defaultTagColor);
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [editingTagId, setEditingTagId] = useState<string | null>(null);
+  const [tagBusy, setTagBusy] = useState(false);
+  const [tagError, setTagError] = useState("");
   const [open, setOpen] = useState(() => typeof window !== "undefined" && collection.role !== "viewer" && new URLSearchParams(window.location.search).get("view") === "new");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [opinionVisitId, setOpinionVisitId] = useState<string | null>(null);
   const [editingOpinionId, setEditingOpinionId] = useState<string | null>(null);
-  const [opinionDraft, setOpinionDraft] = useState<{ comment: string; score: number | null; status: Status; tagIds: string[] }>({ comment: "", score: null, status: "none", tagIds: [] });
+  const [opinionDraft, setOpinionDraft] = useState<{ comment: string; score: number | null; tagIds: string[]; selectedFoods: string[] }>({ comment: "", score: null, tagIds: [], selectedFoods: [] });
   const [opinionSaving, setOpinionSaving] = useState(false);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [draft, setDraft] = useState<Draft>(blankDraft);
@@ -208,7 +225,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
           district: { type: "string", enum: [...districtValues], description: "用餐地點：可選香港各區內的具體地點，例如旺角、油麻地、佐敦和尖沙咀；舊紀錄亦可沿用18區。圖片沒有明確分店或地址時，先問用戶。" },
           orderNumber: { type: "string", description: "截圖上可見的訂單編號" },
           amountHKD: { type: "number", description: "實付總額（港幣），只在清楚顯示時填寫" },
-          status: { type: "string", enum: ["none", "favorite", "blacklist"] },
+          selectedFoods: { type: "array", items: { type: "string" }, description: "使用者明確評價的食物；未指定時代表整份訂單" },
         }, required: ["diningDate", "restaurant", "food", "comment", "score", "channel", "district"], additionalProperties: false,
       },
       annotations: { readOnlyHint: false },
@@ -231,7 +248,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
             score: input.score,
             channel: input.channel,
             district: input.district,
-            status: input.status ?? "none",
+            selectedFoods: input.selectedFoods,
             orderNumber: input.orderNumber ?? "",
             amountCents,
           }),
@@ -261,12 +278,11 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
     return allRestaurantGroups.filter((group) => {
       const visits = group.visits;
       return (!query || visits.some((review) => `${review.restaurant} ${review.food} ${review.opinions.map((opinion) => opinion.comment).join(" ")}`.toLocaleLowerCase().includes(query)))
-        && (statusFilter === "all" || visits.some((review) => review.status === statusFilter))
         && (channelFilter === "all" || visits.some((review) => review.channel === channelFilter))
         && (districtFilter === "all" || visits.some((review) => districtFilter === "unclassified" ? review.district === null : review.district === districtFilter))
         && (activeTagIds.length === 0 || visits.some((review) => activeTagIds.some((id) => review.tagIds.includes(id))));
     });
-  }, [allRestaurantGroups, search, statusFilter, channelFilter, districtFilter, activeTagIds]);
+  }, [allRestaurantGroups, search, channelFilter, districtFilter, activeTagIds]);
   const selectedGroup = allRestaurantGroups.find((group) => group.key === selectedRestaurant);
   const suggestedGroups = useMemo(() => {
     return allRestaurantGroups.map((group) => ({
@@ -283,25 +299,25 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
   }, [allRestaurantGroups, draft.restaurant, draft.district]);
 
   function startNew() { if (collection.role === "viewer") return; setDraft(blankDraft()); setFiles([]); setEditingId(null); setSuggestionsDismissed(false); setExistingPhotos([]); setViewingPhotos(null); setOpen(true); setError(""); setScanMessage(""); setScanError(""); setEntryMode("manual"); }
-  function showReviews(filter: "all" | "favorite") { setOpen(false); setFiltersOpen(false); setViewingPhotos(null); setSelectedRestaurant(null); setStatusFilter(filter); setChannelFilter("all"); setDistrictFilter("all"); setSelectedTagIds([]); setSearch(""); setError(""); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function showReviews() { setOpen(false); setFiltersOpen(false); setViewingPhotos(null); setSelectedRestaurant(null); setChannelFilter("all"); setDistrictFilter("all"); setSelectedTagIds([]); setSearch(""); setError(""); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function startRepeat(review: Review) {
     if (collection.role === "viewer") return;
-    setDraft({ ...blankDraft(), restaurant: review.restaurant, district: review.district ?? "", food: review.food, channel: review.channel });
+    setDraft({ ...blankDraft(), restaurant: review.restaurant, district: review.district ?? "", food: review.food, selectedFoods: splitFoodItems(review.food), channel: review.channel });
     setEditingId(null); setSuggestionsDismissed(true); setExistingPhotos([]); setFiles([]); setViewingPhotos(null); setEntryMode("manual"); setScanMessage(""); setScanError(""); setError(""); setOpen(true);
   }
   function chooseRestaurant(review: Review) {
     setDraft((old) => ({ ...old, restaurant: review.restaurant, district: review.district ?? "" }));
     setSuggestionsDismissed(true);
   }
-  function startEdit(review: Review) { const ownOpinion = review.opinions.find((opinion) => opinion.authorId === user.id); setDraft({ diningDate: review.diningDate, restaurant: review.restaurant, food: review.food, comment: ownOpinion?.comment ?? "", score: ownOpinion?.score ?? null, channel: review.channel, status: review.status, orderNumber: review.orderNumber, amountCents: review.amountCents, district: review.district ?? "", tagIds: review.tagIds }); setEditingId(review.id); setExistingPhotos(review.photos); setFiles([]); setOpen(true); setError(""); }
+  function startEdit(review: Review) { const ownOpinion = review.opinions.find((opinion) => opinion.authorId === user.id); setDraft({ diningDate: review.diningDate, restaurant: review.restaurant, food: review.food, comment: ownOpinion?.comment ?? "", score: ownOpinion?.score ?? null, channel: review.channel, status: "none", orderNumber: review.orderNumber, amountCents: review.amountCents, district: review.district ?? "", tagIds: review.tagIds, selectedFoods: ownOpinion?.selectedFoods ?? splitFoodItems(review.food) }); setEditingId(review.id); setExistingPhotos(review.photos); setFiles([]); setOpen(true); setError(""); }
   function startOpinion(review: Review, opinion?: Opinion) {
     setOpinionVisitId(review.id);
     setEditingOpinionId(opinion?.id ?? null);
-    setOpinionDraft({ comment: opinion?.comment ?? "", score: opinion?.score ?? null, status: review.status, tagIds: review.tagIds });
+    setOpinionDraft({ comment: opinion?.comment ?? "", score: opinion?.score ?? null, tagIds: review.tagIds, selectedFoods: opinion?.selectedFoods ?? splitFoodItems(review.food) });
     setNewTagName("");
     setError("");
   }
-  function change<K extends keyof Draft>(key: K, value: Draft[K]) { setDraft((old) => ({ ...old, [key]: value })); }
+  function change<K extends keyof Draft>(key: K, value: Draft[K]) { setDraft((old) => key === "food" ? { ...old, food: value as string, selectedFoods: splitFoodItems(value as string) } : ({ ...old, [key]: value })); }
 
   async function scanReceipt(file: File) {
     setScanError(""); setScanMessage("");
@@ -326,6 +342,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
         ...old,
         restaurant: old.restaurant || scan.restaurant,
         food: old.food || scan.food,
+        selectedFoods: old.food ? old.selectedFoods : splitFoodItems(scan.food),
         diningDate: old.diningDate === todayHK() ? (scan.diningDate ?? "") : old.diningDate,
         channel: scan.channel && old.channel === "dine_in" ? scan.channel : old.channel,
         orderNumber: old.orderNumber || scan.orderNumber,
@@ -349,6 +366,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
     event.preventDefault(); setError("");
     if (!draft.restaurant.trim() || !draft.food.trim()) { setError("請填寫餐廳名稱和食物。 "); return; }
     if (!draft.district) { setError("請選擇地區。 "); return; }
+    if (!editingId && !draft.selectedFoods.length) { setError("請選擇至少一款你評價的食物。"); return; }
     setSaving(true);
     try {
       const endpoint = editingId ? `/api/reviews/${editingId}` : "/api/reviews";
@@ -388,6 +406,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
     event.preventDefault();
     if (!opinionVisitId) return;
     if (collection.role !== "viewer" && !editingOpinionId && !opinionDraft.comment.trim() && opinionDraft.score === null) { setError("請填寫評語或選擇評分。"); return; }
+    if (collection.role !== "viewer" && !opinionDraft.selectedFoods.length) { setError("請選擇至少一款你評價的食物。"); return; }
     setOpinionSaving(true); setError("");
     try {
       const labelsOnly = collection.role === "viewer";
@@ -420,14 +439,52 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
     } catch (cause) { setError(cause instanceof Error ? cause.message : "移除相片失敗。"); }
   }
 
-  const activeFilterCount = Number(districtFilter !== "all") + Number(statusFilter !== "all") + Number(channelFilter !== "all") + activeTagIds.length;
+  function openTagManager(tag?: CollectionTag) {
+    setEditingTagId(tag?.id ?? null);
+    setNewTagName(tag?.name ?? "");
+    setNewTagColor(tag?.color ?? defaultTagColor);
+    setTagError("");
+    setTagManagerOpen(true);
+  }
+
+  async function saveTag(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!newTagName.trim()) return;
+    setTagBusy(true); setTagError("");
+    try {
+      if (editingTagId) await onUpdateTag(editingTagId, newTagName.trim(), newTagColor);
+      else {
+        const id = await onCreateTag(newTagName.trim(), newTagColor);
+        if (opinionVisitId) setOpinionDraft((old) => ({ ...old, tagIds: [...old.tagIds, id] }));
+        else if (open) setDraft((old) => ({ ...old, tagIds: [...old.tagIds, id] }));
+      }
+      setEditingTagId(null); setNewTagName(""); setNewTagColor(defaultTagColor); setTagManagerOpen(false);
+      await loadReviews();
+    } catch (cause) { setTagError(cause instanceof Error ? cause.message : "儲存標籤失敗。"); }
+    finally { setTagBusy(false); }
+  }
+
+  async function removeTag(tag: CollectionTag) {
+    if (!window.confirm(`刪除「${tag.name}」？這個標籤會從你已標記的食評移除。`)) return;
+    setTagBusy(true); setTagError("");
+    try {
+      await onDeleteTag(tag.id);
+      setOpinionDraft((old) => ({ ...old, tagIds: old.tagIds.filter((id) => id !== tag.id) }));
+      setDraft((old) => ({ ...old, tagIds: old.tagIds.filter((id) => id !== tag.id) }));
+      if (editingTagId === tag.id) { setEditingTagId(null); setNewTagName(""); setNewTagColor(defaultTagColor); }
+      await loadReviews();
+    } catch (cause) { setTagError(cause instanceof Error ? cause.message : "刪除標籤失敗。"); }
+    finally { setTagBusy(false); }
+  }
+
+  const activeFilterCount = Number(districtFilter !== "all") + Number(channelFilter !== "all") + activeTagIds.length;
   const editingOpinion = reviews.find((review) => review.id === opinionVisitId)?.opinions.find((opinion) => opinion.id === editingOpinionId);
-  function clearFilters() { setDistrictFilter("all"); setStatusFilter("all"); setChannelFilter("all"); setSelectedTagIds([]); }
+  function clearFilters() { setDistrictFilter("all"); setChannelFilter("all"); setSelectedTagIds([]); }
 
   return <main className="shell review-app">
     <header className="topbar"><div className="brand"><img className="brand-logo" src={pageAsset("brand-logo.png?v=3")} alt="Closerice" /></div><div className="review-head-actions"><select className="header-group-select" aria-label="切換食評群組" title="切換食評群組" value={collection.id} onChange={(event) => onSelectCollection(event.target.value)}>{collections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><a className="settings-link" href="/closerice/settings/"><Settings size={17} aria-hidden="true" />設定</a></div></header>
     <section className="intro"><div><p className="eyebrow">{collection.name} · 食評筆記</p><h1>一齊記低每一餐的味道。</h1><p>由外賣到堂食，下一次落單之前有得參考。</p></div>{collection.role !== "viewer" && <button className="button primary" onClick={startNew}>＋ 新增紀錄</button>}</section>
-    {!selectedGroup && <section className="mobile-page-head" aria-label="目前頁面"><p className="eyebrow">{collection.name} · 食評筆記</p><h1>{statusFilter === "favorite" ? "我的最愛" : "餐廳紀錄"}</h1><p>{loading ? "正在讀取…" : statusFilter === "favorite" ? `${restaurantGroups.length} 間餐廳有最愛食評` : `${allRestaurantGroups.length} 間餐廳 · ${reviews.length} 筆食評`}</p></section>}
+    {!selectedGroup && <section className="mobile-page-head" aria-label="目前頁面"><p className="eyebrow">{collection.name} · 食評筆記</p><h1>餐廳紀錄</h1><p>{loading ? "正在讀取…" : `${allRestaurantGroups.length} 間餐廳 · ${reviews.length} 筆食評`}</p></section>}
     {message && <div className="toast" role="status">{message}</div>}
     {error && !open && <div className="notice error" role="alert">{error}</div>}
     {selectedGroup ? <section className="restaurant-detail" aria-label={`${selectedGroup.visits[0].restaurant}的食評`}>
@@ -444,9 +501,9 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
         const canEditVisit = collection.role !== "viewer" && review.createdBy === user.id;
         const visitMenu = canEditVisit && <div className="review-menu"><button type="button" className="review-menu-trigger" aria-label={`${review.diningDate} 用餐紀錄選項`} aria-haspopup="menu" aria-expanded={openReviewMenuId === review.id} onClick={() => setOpenReviewMenuId(openReviewMenuId === review.id ? null : review.id)}><MoreHorizontal size={21} aria-hidden="true" /></button>{openReviewMenuId === review.id && <div className="review-menu-panel" role="menu"><button type="button" role="menuitem" onClick={() => { setOpenReviewMenuId(null); startEdit(review); }}>編輯用餐資料</button><button type="button" role="menuitem" className="review-menu-danger" onClick={() => { setOpenReviewMenuId(null); void deleteReview(review); }}>刪除用餐紀錄</button></div>}</div>;
         return <article className="card" key={review.id}><div className="card-body">
-          <div className="card-top"><div><h2>{review.diningDate}</h2><p className="meta">{review.district ? districtNames[review.district] : "未分類"} · {channelNames[review.channel]} {review.amountCents !== null && `· ${money(review.amountCents)}`}</p></div><div className="visit-top-actions">{review.status !== "none" && <span className={`status ${review.status}`}>{review.status === "favorite" ? "我的最愛" : "我的黑名單"}</span>}{!review.orderNumber && visitMenu}</div></div>
+          <div className="card-top"><div><h2>{review.diningDate}</h2><p className="meta">{review.district ? districtNames[review.district] : "未分類"} · {channelNames[review.channel]} {review.amountCents !== null && `· ${money(review.amountCents)}`}</p></div><div className="visit-top-actions">{!review.orderNumber && visitMenu}</div></div>
           <p className="food">{review.food}</p>
-          {review.tagIds.length > 0 && <div className="tag-chips">{tags.filter((tag) => review.tagIds.includes(tag.id)).map((tag) => <button className="tag-chip" key={tag.id} onClick={() => { setSelectedTagIds([tag.id]); setSelectedRestaurant(null); }}># {tag.name}</button>)}</div>}
+          {review.tagIds.length > 0 && <div className="tag-chips">{tags.filter((tag) => review.tagIds.includes(tag.id)).map((tag) => <button className="tag-chip" style={tagStyle(tag.color)} key={tag.id} onClick={() => { setSelectedTagIds([tag.id]); setSelectedRestaurant(null); }}>{tag.name}</button>)}</div>}
           {review.orderNumber && <div className="visit-order-row"><p className="meta">訂單：{review.orderNumber}</p>{visitMenu}</div>}
           {review.photos.length > 0 && <div className="visit-photo-thumbnails" aria-label={`${review.restaurant}的食物相片`}>
             {review.photos.slice(0, 5).map((photo, index) => <button type="button" className="visit-photo-thumbnail" key={photo.id} onClick={() => setViewingPhotos({ review, index })} aria-label={`放大第 ${index + 1} 張食物相片，共 ${review.photos.length} 張`}><img src={photo.url} alt="" loading="lazy" decoding="async" /></button>)}
@@ -455,7 +512,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
             const authorName = opinion.authorName?.trim() || (opinion.authorId ? "成員" : "舊紀錄");
             return <div className="opinion-item" key={opinion.id}>
               <AuthorAvatar name={authorName} pictureUrl={opinion.authorPictureUrl} />
-              <div className="opinion-content"><div className="opinion-head"><strong>{authorName}</strong><span className="score" aria-label={opinion.score ? `${opinion.score} 分（滿分 5 分）` : "未評分"}>{opinion.score ? `${"★".repeat(opinion.score)}${"☆".repeat(5 - opinion.score)}` : "未評分"}</span></div>{opinion.comment && <p className="comment">{opinion.comment}</p>}</div>
+              <div className="opinion-content"><div className="opinion-head"><strong>{authorName}</strong><span className="score" aria-label={opinion.score ? `${opinion.score} 分（滿分 5 分）` : "未評分"}>{opinion.score ? `${"★".repeat(opinion.score)}${"☆".repeat(5 - opinion.score)}` : "未評分"}</span></div>{opinion.selectedFoods && <p className="opinion-foods">食物：{opinion.selectedFoods.join("、")}</p>}{opinion.comment && <p className="comment">{opinion.comment}</p>}</div>
               {collection.role !== "viewer" && opinion.authorId === user.id && <button type="button" className="opinion-edit-button" aria-label={`編輯 ${authorName} 的食評`} onClick={() => startOpinion(review, opinion)}><Pencil size={17} aria-hidden="true" /></button>}
             </div>;
           }) : <p className="opinion-empty">暫時未有評語。</p>}</div>
@@ -464,11 +521,9 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
       })}</div>
     </section> : <>
       <div className="toolbar compact-toolbar"><input className="search" aria-label="搜尋餐廳或食物" placeholder="搜尋餐廳、食物或評語" value={search} onChange={(event) => setSearch(event.target.value)} /><button className="filter-trigger" type="button" onClick={() => setFiltersOpen(true)}><SlidersHorizontal size={18} aria-hidden="true" />篩選{activeFilterCount > 0 && <span className="filter-count">{activeFilterCount}</span>}</button></div>
-      {loading ? <p role="status">正在讀取紀錄…</p> : reviews.length === 0 ? <section className="empty"><div className="empty-copy"><h2>第一餐，從這裏開始。</h2><p>新增一筆食評。餐廳、食物和分數都會儲存；食物相片只在你選擇上載時才會附上。</p>{collection.role !== "viewer" && <button className="button primary" onClick={startNew}>新增第一筆紀錄</button>}</div><img src={pageAsset("food-hero.png")} alt="一盒叉燒飯和青菜" /></section> : restaurantGroups.length === 0 ? <section className="no-results"><Heart size={26} aria-hidden="true" /><h2>{statusFilter === "favorite" && !search && channelFilter === "all" ? "仲未有最愛食評" : "找不到餐廳"}</h2><p>{statusFilter === "favorite" && !search && channelFilter === "all" ? "開啟食評的「編輯」，標記為最愛後就會顯示在這裏。" : "試試其他搜尋字眼或篩選條件。"}</p></section>  : <section className="list restaurant-list" aria-label="餐廳列表">{restaurantGroups.map((group) => {
+      {loading ? <p role="status">正在讀取紀錄…</p> : reviews.length === 0 ? <section className="empty"><div className="empty-copy"><h2>第一餐，從這裏開始。</h2><p>新增一筆食評。餐廳、食物和分數都會儲存；食物相片只在你選擇上載時才會附上。</p>{collection.role !== "viewer" && <button className="button primary" onClick={startNew}>新增第一筆紀錄</button>}</div><img src={pageAsset("food-hero.png")} alt="一盒叉燒飯和青菜" /></section> : restaurantGroups.length === 0 ? <section className="no-results"><Heart size={26} aria-hidden="true" /><h2>找不到餐廳</h2><p>試試其他搜尋字眼或篩選條件。</p></section>  : <section className="list restaurant-list" aria-label="餐廳列表">{restaurantGroups.map((group) => {
         const latest = group.visits[0];
         const allVisits = group.visits;
-        const favoriteCount = allVisits.filter((visit) => visit.status === "favorite").length;
-        const blacklistCount = allVisits.filter((visit) => visit.status === "blacklist").length;
         const groupTagIds = new Set(allVisits.flatMap((visit) => visit.tagIds));
         const groupTags = tags.filter((tag) => groupTagIds.has(tag.id));
         const contributors = [...new Map(allVisits.flatMap((visit) => visit.opinions).map((opinion) => [opinion.authorId ?? opinion.id, opinion])).values()];
@@ -476,17 +531,13 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
           <div className="card-top"><div><h2>{latest.restaurant}</h2><p className="meta">{latest.district ? districtNames[latest.district] : "未分類"} · {allVisits.length} 次記錄</p></div><ChevronRight size={20} className="restaurant-chevron" aria-hidden="true" /></div>
           <p className="restaurant-latest-label">最近一次 · {latest.diningDate}</p><p className="food">{latest.food}</p>
           {contributors.length > 0 && <div className="restaurant-contributors"><div className="restaurant-contributor-avatars">{contributors.slice(0, 3).map((opinion) => <AuthorAvatar key={opinion.authorId ?? opinion.id} name={opinion.authorName?.trim() || (opinion.authorId ? "成員" : "舊紀錄")} pictureUrl={opinion.authorPictureUrl} />)}</div><span>{contributors.length} 位成員留下食評</span></div>}
-          {(favoriteCount > 0 || blacklistCount > 0 || groupTags.length > 0) && <div className="restaurant-badges" aria-label="餐廳食評標記和標籤">
-            {favoriteCount > 0 && <span className="status favorite">我的最愛{favoriteCount > 1 ? ` · ${favoriteCount} 次` : ""}</span>}
-            {blacklistCount > 0 && <span className="status blacklist">我的黑名單{blacklistCount > 1 ? ` · ${blacklistCount} 次` : ""}</span>}
-            {groupTags.map((tag) => <span className="restaurant-tag" key={tag.id}># {tag.name}</span>)}
-          </div>}
+          {groupTags.length > 0 && <div className="restaurant-badges" aria-label="我的餐廳標籤">{groupTags.map((tag) => <span className="restaurant-tag" style={tagStyle(tag.color)} key={tag.id}>{tag.name}</span>)}</div>}
           <div className="restaurant-card-footer"><span>{ratingSummary(group.visits)}</span><span>查看全部食評</span></div>
         </button></article>;
       })}</section>}
     </>}
-    {filtersOpen && <div className="overlay filter-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setFiltersOpen(false); }}><section className="filter-dialog" role="dialog" aria-modal="true" aria-labelledby="filter-title"><div className="dialog-head"><div><h2 id="filter-title">篩選餐廳</h2><p className="hint">按地點、標記、用餐方式或自訂標籤尋找餐廳。</p></div><button className="icon-button" onClick={() => setFiltersOpen(false)} aria-label="關閉篩選">×</button></div><div className="filter-fields"><div className="field"><span>地點</span><LocationPicker value={districtFilter} recent={recentDistricts} allowAll allowUnclassified onChange={(value) => { setDistrictFilter(value); if (isDistrict(value)) rememberDistrict(value); }} /></div><div className="field filter-field-group"><span>標記</span><div className="filter-toggle-row" role="group" aria-label="按標記篩選"><button type="button" className="filter-toggle favorite-toggle" aria-pressed={statusFilter === "favorite"} onClick={() => setStatusFilter(statusFilter === "favorite" ? "all" : "favorite")}>最愛</button><button type="button" className="filter-toggle blacklist-toggle" aria-pressed={statusFilter === "blacklist"} onClick={() => setStatusFilter(statusFilter === "blacklist" ? "all" : "blacklist")}>黑名單</button></div></div><div className="field filter-field-group"><span>用餐方式</span><div className="filter-toggle-row" role="group" aria-label="按用餐方式篩選">{Object.entries(channelNames).map(([key, name]) => <button type="button" className="filter-toggle" key={key} aria-pressed={channelFilter === key} onClick={() => setChannelFilter(channelFilter === key ? "all" : key)}>{name}</button>)}</div></div><fieldset className="filter-tags"><legend>自訂標籤</legend><p>可選多個；顯示符合任一標籤的餐廳。</p>{tags.length === 0 ? <p>你在這個群組尚未有自訂標籤。</p> : <div className="filter-tag-options">{tags.map((tag) => <label key={tag.id}><input type="checkbox" checked={activeTagIds.includes(tag.id)} onChange={() => toggleTagFilter(tag.id)} /># {tag.name}</label>)}</div>}</fieldset></div><div className="filter-actions"><button type="button" className="button secondary" onClick={clearFilters} disabled={activeFilterCount === 0}>清除篩選</button><button type="button" className="button primary" onClick={() => setFiltersOpen(false)}>顯示 {restaurantGroups.length} 間餐廳</button></div></section></div>}
-    <nav className={`mobile-tabs ${collection.role === "viewer" ? "viewer-tabs" : ""}`} aria-label="底部分頁"><button type="button" className={`mobile-tab ${!open && statusFilter !== "favorite" ? "active" : ""}`} aria-current={!open && statusFilter !== "favorite" ? "page" : undefined} onClick={() => showReviews("all")}><span className="mobile-tab-icon"><List size={22} strokeWidth={2.2} aria-hidden="true" /></span><span>食評</span></button>{collection.role !== "viewer" && <button type="button" className={`mobile-tab ${open ? "active" : ""}`} aria-current={open ? "page" : undefined} onClick={startNew}><span className="mobile-tab-icon"><Plus size={23} strokeWidth={2.4} aria-hidden="true" /></span><span>新增</span></button>}<button type="button" className={`mobile-tab ${!open && statusFilter === "favorite" ? "active" : ""}`} aria-current={!open && statusFilter === "favorite" ? "page" : undefined} onClick={() => showReviews("favorite")}><span className="mobile-tab-icon"><Heart size={22} strokeWidth={2.2} aria-hidden="true" /></span><span>最愛</span></button><a className="mobile-tab" href="/closerice/settings/"><span className="mobile-tab-icon"><Settings size={22} strokeWidth={2.2} aria-hidden="true" /></span><span>設定</span></a></nav>
+    {filtersOpen && <div className="overlay filter-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setFiltersOpen(false); }}><section className="filter-dialog" role="dialog" aria-modal="true" aria-labelledby="filter-title"><div className="dialog-head"><div><h2 id="filter-title">篩選餐廳</h2><p className="hint">按地點、用餐方式或個人標籤尋找餐廳。</p></div><button className="icon-button" onClick={() => setFiltersOpen(false)} aria-label="關閉篩選">×</button></div><div className="filter-fields"><div className="field"><span>地點</span><LocationPicker value={districtFilter} recent={recentDistricts} allowAll allowUnclassified onChange={(value) => { setDistrictFilter(value); if (isDistrict(value)) rememberDistrict(value); }} /></div><div className="field filter-field-group"><span>用餐方式</span><div className="filter-toggle-row" role="group" aria-label="按用餐方式篩選">{Object.entries(channelNames).map(([key, name]) => <button type="button" className="filter-toggle" key={key} aria-pressed={channelFilter === key} onClick={() => setChannelFilter(channelFilter === key ? "all" : key)}>{name}</button>)}</div></div><fieldset className="filter-tags"><legend>我的標籤</legend><p>可選多個；顯示符合任一標籤的餐廳。</p>{tags.length === 0 ? <p>你在這個群組尚未有個人標籤。</p> : <div className="filter-tag-options">{tags.map((tag) => <label key={tag.id}><input type="checkbox" checked={activeTagIds.includes(tag.id)} onChange={() => toggleTagFilter(tag.id)} />{tag.name}</label>)}</div>}</fieldset></div><div className="filter-actions"><button type="button" className="button secondary" onClick={clearFilters} disabled={activeFilterCount === 0}>清除篩選</button><button type="button" className="button primary" onClick={() => setFiltersOpen(false)}>顯示 {restaurantGroups.length} 間餐廳</button></div></section></div>}
+    <nav className={`mobile-tabs ${collection.role === "viewer" ? "viewer-tabs" : ""}`} aria-label="底部分頁"><button type="button" className={`mobile-tab ${!open ? "active" : ""}`} aria-current={!open ? "page" : undefined} onClick={showReviews}><span className="mobile-tab-icon"><List size={22} strokeWidth={2.2} aria-hidden="true" /></span><span>食評</span></button>{collection.role !== "viewer" && <button type="button" className={`mobile-tab ${open ? "active" : ""}`} aria-current={open ? "page" : undefined} onClick={startNew}><span className="mobile-tab-icon"><Plus size={23} strokeWidth={2.4} aria-hidden="true" /></span><span>新增</span></button>}<a className="mobile-tab" href="/closerice/settings/"><span className="mobile-tab-icon"><Settings size={22} strokeWidth={2.2} aria-hidden="true" /></span><span>設定</span></a></nav>
     {viewingPhotos && <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewingPhotos(null); }}><section className="photo-dialog" role="dialog" aria-modal="true" aria-label={`${viewingPhotos.review.restaurant}的食物相片`}>
       <div className="dialog-head"><div><h2>{viewingPhotos.review.restaurant}的食物相片</h2><p className="hint">{viewingPhotos.index + 1} / {viewingPhotos.review.photos.length}</p></div><button type="button" className="icon-button" onClick={() => setViewingPhotos(null)} aria-label="關閉相片">×</button></div>
       <div className="photo-viewer-stage"><img src={viewingPhotos.review.photos[viewingPhotos.index].url} alt={`${viewingPhotos.review.restaurant}的食物相片，第 ${viewingPhotos.index + 1} 張`} />{viewingPhotos.review.photos.length > 1 && <><button type="button" className="photo-viewer-arrow previous" aria-label="上一張相片" onClick={() => setViewingPhotos((current) => current ? { ...current, index: (current.index - 1 + current.review.photos.length) % current.review.photos.length } : null)}><ChevronLeft size={26} aria-hidden="true" /></button><button type="button" className="photo-viewer-arrow next" aria-label="下一張相片" onClick={() => setViewingPhotos((current) => current ? { ...current, index: (current.index + 1) % current.review.photos.length } : null)}><ChevronRight size={26} aria-hidden="true" /></button></>}</div>
@@ -496,13 +547,14 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
       <div className="dialog-head"><div><h2 id="opinion-dialog-title">{collection.role === "viewer" ? "我的個人標記" : editingOpinionId ? "編輯我的食評" : "加入我的食評"}</h2><p className="hint">{collection.role === "viewer" ? "你的標記只會顯示給你。" : "評語和星級會顯示給群組成員；個人標記和標籤只會顯示給你。"}</p></div><button type="button" className="icon-button" onClick={() => setOpinionVisitId(null)} aria-label="關閉">×</button></div>
       {error && <div className="notice error" role="alert">{error}</div>}
       <form onSubmit={saveOpinion}>
+        {collection.role !== "viewer" && <FoodPicker food={reviews.find((review) => review.id === opinionVisitId)?.food ?? ""} selected={opinionDraft.selectedFoods} onChange={(selectedFoods) => setOpinionDraft((old) => ({ ...old, selectedFoods }))} />}
         {collection.role !== "viewer" && <><div className="field"><span>你的評分</span><div className="rating" role="group" aria-label="評分">{[1, 2, 3, 4, 5].map((n) => <button type="button" key={n} className={opinionDraft.score !== null && n <= opinionDraft.score ? "active" : ""} aria-label={`${n} 分`} onClick={() => setOpinionDraft((old) => ({ ...old, score: old.score === n ? null : n }))}>★</button>)}</div></div><label className="field">你的評語<textarea maxLength={3000} placeholder="這次吃得怎樣？" value={opinionDraft.comment} onChange={(event) => setOpinionDraft((old) => ({ ...old, comment: event.target.value }))} /></label></>}
-        <div className="field"><span>我的標記</span><div className="toggle-row"><button type="button" className={`toggle ${opinionDraft.status === "favorite" ? "selected" : ""}`} aria-pressed={opinionDraft.status === "favorite"} onClick={() => setOpinionDraft((old) => ({ ...old, status: old.status === "favorite" ? "none" : "favorite" }))}>☆ 最愛</button><button type="button" className={`toggle ${opinionDraft.status === "blacklist" ? "selected" : ""}`} aria-pressed={opinionDraft.status === "blacklist"} onClick={() => setOpinionDraft((old) => ({ ...old, status: old.status === "blacklist" ? "none" : "blacklist" }))}>⊘ 黑名單</button></div></div>
-        <div className="field"><span>我的自訂標籤（此群組最多 10 個）</span><div className="tag-options">{tags.map((tag) => <div className="tag-option" key={tag.id}><button type="button" className={`tag-choice ${opinionDraft.tagIds.includes(tag.id) ? "selected" : ""}`} aria-pressed={opinionDraft.tagIds.includes(tag.id)} onClick={() => setOpinionDraft((old) => ({ ...old, tagIds: old.tagIds.includes(tag.id) ? old.tagIds.filter((id) => id !== tag.id) : [...old.tagIds, tag.id] }))}># {tag.name}</button><button type="button" className="tag-delete" aria-label={`刪除標籤 ${tag.name}`} onClick={() => { if (window.confirm(`刪除你自己的「${tag.name}」標籤？你的食評標記將一併移除。`)) void onDeleteTag(tag.id).then(() => { setOpinionDraft((old) => ({ ...old, tagIds: old.tagIds.filter((id) => id !== tag.id) })); void loadReviews(); }).catch((cause) => setError(cause instanceof Error ? cause.message : "刪除標籤失敗。")); }}>×</button></div>)}</div><div className="tag-create"><input aria-label="新標籤名稱" maxLength={24} placeholder="例如：檸茶正" value={newTagName} onChange={(event) => setNewTagName(event.target.value)} /><button type="button" className="button secondary" disabled={!newTagName.trim() || tags.length >= 10} onClick={() => void onCreateTag(newTagName).then((id) => { setNewTagName(""); setOpinionDraft((old) => ({ ...old, tagIds: [...old.tagIds, id] })); }).catch((cause) => setError(cause instanceof Error ? cause.message : "新增標籤失敗。"))}>新增標籤</button></div>{tags.length >= 10 && <p className="tag-limit-note">你在這個群組已有 10 個標籤。可繼續選用，或先刪除不再使用的標籤。</p>}</div>
+        <TagPicker tags={tags} selected={opinionDraft.tagIds} onChange={(tagIds) => setOpinionDraft((old) => ({ ...old, tagIds }))} onManage={() => openTagManager()} />
         {editingOpinion && <button type="button" className="opinion-delete-button" disabled={opinionSaving} onClick={() => void deleteOpinion(editingOpinion)}>刪除我的食評</button>}
         <div className="dialog-actions"><button type="button" className="button secondary" onClick={() => setOpinionVisitId(null)}>取消</button><button type="submit" className="button primary" disabled={opinionSaving}>{opinionSaving ? "儲存中…" : collection.role === "viewer" ? "儲存我的標記" : "儲存我的食評"}</button></div>
       </form>
     </section></div>}
-    {open && <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="dialog-head"><div><h2 id="dialog-title">{editingId ? "編輯用餐紀錄" : "新增食評"}</h2><p className="hint">餐廳、食物和地區為必填；其他資料可以稍後補上。</p></div><button className="icon-button" onClick={() => setOpen(false)} aria-label="關閉">×</button></div>{error && <div className="notice error" role="alert">{error}</div>}<form onSubmit={saveReview}>{!editingId && <div className="entry-mode" role="group" aria-label="新增方式"><button type="button" className={entryMode === "manual" ? "active" : ""} aria-pressed={entryMode === "manual"} onClick={() => setEntryMode("manual")}>手動填寫</button><button type="button" className={entryMode === "scan" ? "active" : ""} aria-pressed={entryMode === "scan"} onClick={() => setEntryMode("scan")}>掃描圖片</button></div>}{!editingId && entryMode === "scan" && <div className="scan-box"><div className="scan-heading"><span className="scan-icon"><ScanLine size={23} aria-hidden="true" /></span><div><strong>掃描訂單截圖或收據</strong><p>圖片會傳給 Kimi 辨認，但不會儲存在食評。</p></div></div><input id="receipt-scan" className="scan-input" type="file" accept="image/jpeg,image/png,image/webp" disabled={scanning} onChange={(event) => { const file = event.target.files?.[0]; if (file) void scanReceipt(file); event.target.value = ""; }} /><label className="button secondary scan-pick" htmlFor="receipt-scan">{scanning ? "正在掃描…" : "選擇圖片並掃描"}</label>{scanMessage && <p className="scan-feedback" role="status">{scanMessage}</p>}{scanError && <p className="scan-feedback error-text" role="alert">{scanError}</p>}</div>}<div className="form-grid"><label className="field">用餐日期<input type="date" required value={draft.diningDate} onChange={(event) => change("diningDate", event.target.value)} /></label><label className="field">用餐方式<select value={draft.channel} onChange={(event) => change("channel", event.target.value as Channel)}>{Object.entries(channelNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label><div className="field full"><span>地區 *</span><LocationPicker value={draft.district} recent={recentDistricts} onChange={(value) => { change("district", value as District); setSuggestionsDismissed(false); if (isDistrict(value)) rememberDistrict(value); }} /></div><label className="field full">餐廳名稱（包括分店） *<input required maxLength={120} placeholder="例如：某某茶餐廳（旺角店）" value={draft.restaurant} onChange={(event) => { change("restaurant", event.target.value); setSuggestionsDismissed(false); }} /></label>{!editingId && !suggestionsDismissed && suggestedGroups.length > 0 && <div className="restaurant-suggestions field full" role="group" aria-label="可能相同的餐廳"><strong>可能是你去過的餐廳</strong><p>選擇後沿用餐廳名稱和地點，這次用餐仍會新增為另一筆食評。</p>{suggestedGroups.map((group) => { const latest = group.visits[0]; return <button type="button" key={group.key} onClick={() => chooseRestaurant(latest)}><span><b>{latest.restaurant}</b><small>{latest.district ? districtNames[latest.district] : "未分類"} · {group.visits.length} 次 · 最近 {latest.diningDate}</small></span><ChevronRight size={17} aria-hidden="true" /></button>; })}<button type="button" className="restaurant-new-choice" onClick={() => setSuggestionsDismissed(true)}>這是新餐廳，繼續填寫</button></div>}<label className="field full">食物 *<textarea required maxLength={1000} placeholder="例如：叉燒飯、凍檸茶" value={draft.food} onChange={(event) => change("food", event.target.value)} /></label><label className="field">訂單編號<input maxLength={80} value={draft.orderNumber} onChange={(event) => change("orderNumber", event.target.value)} /></label><label className="field">實付金額（港幣）<input type="number" min="0" step="0.01" inputMode="decimal" value={draft.amountCents === null ? "" : (draft.amountCents / 100).toFixed(2)} onChange={(event) => change("amountCents", event.target.value === "" ? null : Math.round(Number(event.target.value) * 100))} /></label>{!editingId && <><div className="field full"><span>你的評分</span><div className="rating" role="group" aria-label="評分">{[1, 2, 3, 4, 5].map((n) => <button type="button" key={n} className={draft.score !== null && n <= draft.score ? "active" : ""} aria-label={`${n} 分`} onClick={() => change("score", draft.score === n ? null : n)}>★</button>)}</div></div><label className="field full">你的評語<textarea maxLength={3000} placeholder="味道、份量、送餐速度，或者下次會否再叫" value={draft.comment} onChange={(event) => change("comment", event.target.value)} /></label></>}{!editingId && <><div className="field full"><span>標記</span><div className="toggle-row"><button type="button" className={`toggle ${draft.status === "favorite" ? "selected" : ""}`} onClick={() => change("status", draft.status === "favorite" ? "none" : "favorite")}>☆ 最愛</button><button type="button" className={`toggle ${draft.status === "blacklist" ? "selected" : ""}`} onClick={() => change("status", draft.status === "blacklist" ? "none" : "blacklist")}>⊘ 黑名單</button></div></div><div className="field full"><span>我的自訂標籤（此群組最多 10 個）</span><div className="tag-options">{tags.map((tag) => <div className="tag-option" key={tag.id}><button type="button" className={`tag-choice ${draft.tagIds.includes(tag.id) ? "selected" : ""}`} aria-pressed={draft.tagIds.includes(tag.id)} onClick={() => change("tagIds", draft.tagIds.includes(tag.id) ? draft.tagIds.filter((id) => id !== tag.id) : draft.tagIds.length < 10 ? [...draft.tagIds, tag.id] : draft.tagIds)}># {tag.name}</button>{<button type="button" className="tag-delete" aria-label={`刪除標籤 ${tag.name}`} onClick={() => { if (window.confirm(`刪除你自己的「${tag.name}」標籤？你的食評標記將一併移除。`)) void onDeleteTag(tag.id).then(() => { change("tagIds", draft.tagIds.filter((id) => id !== tag.id)); void loadReviews(); }).catch((cause) => setError(cause instanceof Error ? cause.message : "刪除標籤失敗。")); }}>×</button>}</div>)}</div><div className="tag-create"><input aria-label="新標籤名稱" maxLength={24} placeholder="例如：檸茶正" value={newTagName} onChange={(event) => setNewTagName(event.target.value)} /><button type="button" className="button secondary" disabled={!newTagName.trim() || tags.length >= 10} onClick={() => void onCreateTag(newTagName).then((id) => { setNewTagName(""); change("tagIds", [...draft.tagIds, id]); }).catch((cause) => setError(cause instanceof Error ? cause.message : "新增標籤失敗。"))}>新增標籤</button></div>{tags.length >= 10 && <p className="tag-limit-note">你在這個群組已有 10 個標籤。可繼續選用，或先刪除不再使用的標籤。</p>}</div></>}<div className="field full photo-upload-field"><span>食物相片（每筆最多 5 張）</span><input id="food-photo-upload" className="photo-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={existingPhotos.length >= 5} onChange={(event) => { setFiles(Array.from(event.target.files ?? []).slice(0, Math.max(0, 5 - existingPhotos.length))); event.target.value = ""; }} /><label className={`photo-upload-tile ${existingPhotos.length >= 5 ? "is-full" : ""}`} htmlFor="food-photo-upload"><ImagePlus size={25} aria-hidden="true" /><span>上載相片</span><small>{existingPhotos.length + files.length}/5 張</small></label>{files.length > 0 && <span className="hint">待上載：{files.map((file) => file.name).join("、")}</span>}</div>{existingPhotos.length > 0 && <div className="field full"><span>已儲存相片</span><div className="photo-grid">{existingPhotos.map((photo) => <div className="photo-tile" key={photo.id}><img src={photo.url} alt={photo.name} /><button type="button" onClick={() => deletePhoto(photo)} aria-label={`移除${photo.name}`}>×</button></div>)}</div></div>}</div><div className="dialog-actions"><button type="button" className="button secondary" onClick={() => setOpen(false)}>取消</button><button type="submit" className="button primary" disabled={saving}>{saving ? "儲存中…" : "儲存紀錄"}</button></div></form></section></div>}
+    {open && <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="dialog-head"><div><h2 id="dialog-title">{editingId ? "編輯用餐紀錄" : "新增食評"}</h2><p className="hint">餐廳、食物和地區為必填；其他資料可以稍後補上。</p></div><button className="icon-button" onClick={() => setOpen(false)} aria-label="關閉">×</button></div>{error && <div className="notice error" role="alert">{error}</div>}<form onSubmit={saveReview}>{!editingId && <div className="entry-mode" role="group" aria-label="新增方式"><button type="button" className={entryMode === "manual" ? "active" : ""} aria-pressed={entryMode === "manual"} onClick={() => setEntryMode("manual")}>手動填寫</button><button type="button" className={entryMode === "scan" ? "active" : ""} aria-pressed={entryMode === "scan"} onClick={() => setEntryMode("scan")}>掃描圖片</button></div>}{!editingId && entryMode === "scan" && <div className="scan-box"><div className="scan-heading"><span className="scan-icon"><ScanLine size={23} aria-hidden="true" /></span><div><strong>掃描訂單截圖或收據</strong><p>圖片會傳給 Kimi 辨認，但不會儲存在食評。</p></div></div><input id="receipt-scan" className="scan-input" type="file" accept="image/jpeg,image/png,image/webp" disabled={scanning} onChange={(event) => { const file = event.target.files?.[0]; if (file) void scanReceipt(file); event.target.value = ""; }} /><label className="button secondary scan-pick" htmlFor="receipt-scan">{scanning ? "正在掃描…" : "選擇圖片並掃描"}</label>{scanMessage && <p className="scan-feedback" role="status">{scanMessage}</p>}{scanError && <p className="scan-feedback error-text" role="alert">{scanError}</p>}</div>}<div className="form-grid"><label className="field">用餐日期<input type="date" required value={draft.diningDate} onChange={(event) => change("diningDate", event.target.value)} /></label><label className="field">用餐方式<select value={draft.channel} onChange={(event) => change("channel", event.target.value as Channel)}>{Object.entries(channelNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label><div className="field full"><span>地區 *</span><LocationPicker value={draft.district} recent={recentDistricts} onChange={(value) => { change("district", value as District); setSuggestionsDismissed(false); if (isDistrict(value)) rememberDistrict(value); }} /></div><label className="field full">餐廳名稱（包括分店） *<input required maxLength={120} placeholder="例如：某某茶餐廳（旺角店）" value={draft.restaurant} onChange={(event) => { change("restaurant", event.target.value); setSuggestionsDismissed(false); }} /></label>{!editingId && !suggestionsDismissed && suggestedGroups.length > 0 && <div className="restaurant-suggestions field full" role="group" aria-label="可能相同的餐廳"><strong>可能是你去過的餐廳</strong><p>選擇後沿用餐廳名稱和地點，這次用餐仍會新增為另一筆食評。</p>{suggestedGroups.map((group) => { const latest = group.visits[0]; return <button type="button" key={group.key} onClick={() => chooseRestaurant(latest)}><span><b>{latest.restaurant}</b><small>{latest.district ? districtNames[latest.district] : "未分類"} · {group.visits.length} 次 · 最近 {latest.diningDate}</small></span><ChevronRight size={17} aria-hidden="true" /></button>; })}<button type="button" className="restaurant-new-choice" onClick={() => setSuggestionsDismissed(true)}>這是新餐廳，繼續填寫</button></div>}<label className="field full">食物 *<textarea required maxLength={1000} placeholder="例如：叉燒飯、凍檸茶" value={draft.food} onChange={(event) => change("food", event.target.value)} /></label>{!editingId && <div className="field full"><FoodPicker food={draft.food} selected={draft.selectedFoods} onChange={(selectedFoods) => change("selectedFoods", selectedFoods)} /></div>}<label className="field">訂單編號<input maxLength={80} value={draft.orderNumber} onChange={(event) => change("orderNumber", event.target.value)} /></label><label className="field">實付金額（港幣）<input type="number" min="0" step="0.01" inputMode="decimal" value={draft.amountCents === null ? "" : (draft.amountCents / 100).toFixed(2)} onChange={(event) => change("amountCents", event.target.value === "" ? null : Math.round(Number(event.target.value) * 100))} /></label>{!editingId && <><div className="field full"><span>你的評分</span><div className="rating" role="group" aria-label="評分">{[1, 2, 3, 4, 5].map((n) => <button type="button" key={n} className={draft.score !== null && n <= draft.score ? "active" : ""} aria-label={`${n} 分`} onClick={() => change("score", draft.score === n ? null : n)}>★</button>)}</div></div><label className="field full">你的評語<textarea maxLength={3000} placeholder="味道、份量、送餐速度，或者下次會否再叫" value={draft.comment} onChange={(event) => change("comment", event.target.value)} /></label></>}{!editingId && <div className="field full"><TagPicker tags={tags} selected={draft.tagIds} onChange={(tagIds) => change("tagIds", tagIds)} onManage={() => openTagManager()} /></div>}<div className="field full photo-upload-field"><span>食物相片（每筆最多 5 張）</span><input id="food-photo-upload" className="photo-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={existingPhotos.length >= 5} onChange={(event) => { setFiles(Array.from(event.target.files ?? []).slice(0, Math.max(0, 5 - existingPhotos.length))); event.target.value = ""; }} /><label className={`photo-upload-tile ${existingPhotos.length >= 5 ? "is-full" : ""}`} htmlFor="food-photo-upload"><ImagePlus size={25} aria-hidden="true" /><span>上載相片</span><small>{existingPhotos.length + files.length}/5 張</small></label>{files.length > 0 && <span className="hint">待上載：{files.map((file) => file.name).join("、")}</span>}</div>{existingPhotos.length > 0 && <div className="field full"><span>已儲存相片</span><div className="photo-grid">{existingPhotos.map((photo) => <div className="photo-tile" key={photo.id}><img src={photo.url} alt={photo.name} /><button type="button" onClick={() => deletePhoto(photo)} aria-label={`移除${photo.name}`}>×</button></div>)}</div></div>}</div><div className="dialog-actions"><button type="button" className="button secondary" onClick={() => setOpen(false)}>取消</button><button type="submit" className="button primary" disabled={saving}>{saving ? "儲存中…" : "儲存紀錄"}</button></div></form></section></div>}
+    {tagManagerOpen && <div className="overlay tag-manager-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setTagManagerOpen(false); }}><section className="dialog tag-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="tag-manager-title"><div className="dialog-head"><div><h2 id="tag-manager-title">管理我的標籤</h2><p className="hint">每個群組最多 10 個；只有你自己會看到這些標籤。</p></div><button type="button" className="icon-button" onClick={() => setTagManagerOpen(false)} aria-label="關閉標籤管理">×</button></div>{tagError && <div className="notice error" role="alert">{tagError}</div>}<div className="tag-manager-list">{tags.map((tag) => <div className="tag-manager-row" key={tag.id}><span className="tag-chip" style={tagStyle(tag.color)}>{tag.name}</span><div><button type="button" className="button secondary" onClick={() => openTagManager(tag)}>更改</button><button type="button" className="button secondary danger" disabled={tagBusy} onClick={() => void removeTag(tag)}>刪除</button></div></div>)}</div><form onSubmit={saveTag}><label className="field">{editingTagId ? "更改標籤名稱" : "新增標籤名稱"}<input maxLength={24} value={newTagName} onChange={(event) => setNewTagName(event.target.value)} placeholder="例如：檸茶正" /></label><fieldset className="tag-color-picker"><legend>標籤顏色</legend><div>{tagColors.map((color) => <button type="button" key={color} className={newTagColor === color ? "active" : ""} style={{ backgroundColor: color }} aria-label={`選擇顏色 ${color}`} aria-pressed={newTagColor === color} onClick={() => setNewTagColor(color)} />)}</div></fieldset><div className="dialog-actions"><button type="button" className="button secondary" onClick={() => { setEditingTagId(null); setNewTagName(""); setNewTagColor(defaultTagColor); }}>清除</button><button type="submit" className="button primary" disabled={tagBusy || !newTagName.trim() || (!editingTagId && tags.length >= 10)}>{editingTagId ? "儲存更改" : "新增標籤"}</button></div>{tags.length >= 10 && !editingTagId && <p className="tag-limit-note">已達 10 個標籤上限。請先刪除不再使用的標籤。</p>}</form></section></div>}
   </main>;
 }
