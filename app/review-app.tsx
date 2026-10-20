@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ChevronRight, Heart, ImagePlus, List, MoreHorizontal, Pencil, Plus, ScanLine, Settings, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Heart, ImagePlus, List, MoreHorizontal, Pencil, Plus, ScanLine, Settings, SlidersHorizontal } from "lucide-react";
 import { apiUrl, pageAsset } from "../lib/client-urls";
 import { collectionFetch } from "../lib/client-api";
 import { districtNames, districtValues, isDistrict, type District } from "../lib/districts";
@@ -116,11 +116,27 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
   const [files, setFiles] = useState<File[]>([]);
   const [existingPhotos, setExistingPhotos] = useState<Photo[]>([]);
   const [saving, setSaving] = useState(false);
-  const [viewingPhotos, setViewingPhotos] = useState<Review | null>(null);
+  const [viewingPhotos, setViewingPhotos] = useState<{ review: Review; index: number } | null>(null);
   const [entryMode, setEntryMode] = useState<"manual" | "scan">("manual");
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState("");
   const [scanError, setScanError] = useState("");
+
+  useEffect(() => {
+    if (!viewingPhotos) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setViewingPhotos(null);
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        setViewingPhotos((current) => current ? {
+          ...current,
+          index: (current.index + (event.key === "ArrowRight" ? 1 : -1) + current.review.photos.length) % current.review.photos.length,
+        } : null);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [viewingPhotos]);
 
   useEffect(() => {
     if (!openReviewMenuId) return;
@@ -424,7 +440,9 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
           <p className="food">{review.food}</p>
           {review.tagIds.length > 0 && <div className="tag-chips">{tags.filter((tag) => review.tagIds.includes(tag.id)).map((tag) => <button className="tag-chip" key={tag.id} onClick={() => { setSelectedTagIds([tag.id]); setSelectedRestaurant(null); }}># {tag.name}</button>)}</div>}
           {review.orderNumber && <div className="visit-order-row"><p className="meta">訂單：{review.orderNumber}</p>{visitMenu}</div>}
-          {review.photos.length > 0 && <button className="photo-link" onClick={() => setViewingPhotos(review)}>查看食物相片（{review.photos.length}）</button>}
+          {review.photos.length > 0 && <div className="visit-photo-thumbnails" aria-label={`${review.restaurant}的食物相片`}>
+            {review.photos.slice(0, 5).map((photo, index) => <button type="button" className="visit-photo-thumbnail" key={photo.id} onClick={() => setViewingPhotos({ review, index })} aria-label={`放大第 ${index + 1} 張食物相片，共 ${review.photos.length} 張`}><img src={photo.url} alt="" loading="lazy" decoding="async" /></button>)}
+          </div>}
           <div className="opinion-list" aria-label="這次用餐的食評">{review.opinions.length ? review.opinions.map((opinion) => {
             const authorName = opinion.authorName?.trim() || (opinion.authorId ? "成員" : "舊紀錄");
             return <div className="opinion-item" key={opinion.id}>
@@ -461,7 +479,11 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
     </>}
     {filtersOpen && <div className="overlay filter-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setFiltersOpen(false); }}><section className="filter-dialog" role="dialog" aria-modal="true" aria-labelledby="filter-title"><div className="dialog-head"><div><h2 id="filter-title">篩選餐廳</h2><p className="hint">按地點、標記、用餐方式或自訂標籤尋找餐廳。</p></div><button className="icon-button" onClick={() => setFiltersOpen(false)} aria-label="關閉篩選">×</button></div><div className="filter-fields"><div className="field"><span>地點</span><LocationPicker value={districtFilter} recent={recentDistricts} allowAll allowUnclassified onChange={(value) => { setDistrictFilter(value); if (isDistrict(value)) rememberDistrict(value); }} /></div><div className="field filter-field-group"><span>標記</span><div className="filter-toggle-row" role="group" aria-label="按標記篩選"><button type="button" className="filter-toggle favorite-toggle" aria-pressed={statusFilter === "favorite"} onClick={() => setStatusFilter(statusFilter === "favorite" ? "all" : "favorite")}>最愛</button><button type="button" className="filter-toggle blacklist-toggle" aria-pressed={statusFilter === "blacklist"} onClick={() => setStatusFilter(statusFilter === "blacklist" ? "all" : "blacklist")}>黑名單</button></div></div><div className="field filter-field-group"><span>用餐方式</span><div className="filter-toggle-row" role="group" aria-label="按用餐方式篩選">{Object.entries(channelNames).map(([key, name]) => <button type="button" className="filter-toggle" key={key} aria-pressed={channelFilter === key} onClick={() => setChannelFilter(channelFilter === key ? "all" : key)}>{name}</button>)}</div></div><fieldset className="filter-tags"><legend>自訂標籤</legend><p>可選多個；顯示符合任一標籤的餐廳。</p>{tags.length === 0 ? <p>你在這個群組尚未有自訂標籤。</p> : <div className="filter-tag-options">{tags.map((tag) => <label key={tag.id}><input type="checkbox" checked={activeTagIds.includes(tag.id)} onChange={() => toggleTagFilter(tag.id)} /># {tag.name}</label>)}</div>}</fieldset></div><div className="filter-actions"><button type="button" className="button secondary" onClick={clearFilters} disabled={activeFilterCount === 0}>清除篩選</button><button type="button" className="button primary" onClick={() => setFiltersOpen(false)}>顯示 {restaurantGroups.length} 間餐廳</button></div></section></div>}
     <nav className={`mobile-tabs ${collection.role === "viewer" ? "viewer-tabs" : ""}`} aria-label="底部分頁"><button type="button" className={`mobile-tab ${!open && statusFilter !== "favorite" ? "active" : ""}`} aria-current={!open && statusFilter !== "favorite" ? "page" : undefined} onClick={() => showReviews("all")}><span className="mobile-tab-icon"><List size={22} strokeWidth={2.2} aria-hidden="true" /></span><span>食評</span></button>{collection.role !== "viewer" && <button type="button" className={`mobile-tab ${open ? "active" : ""}`} aria-current={open ? "page" : undefined} onClick={startNew}><span className="mobile-tab-icon"><Plus size={23} strokeWidth={2.4} aria-hidden="true" /></span><span>新增</span></button>}<button type="button" className={`mobile-tab ${!open && statusFilter === "favorite" ? "active" : ""}`} aria-current={!open && statusFilter === "favorite" ? "page" : undefined} onClick={() => showReviews("favorite")}><span className="mobile-tab-icon"><Heart size={22} strokeWidth={2.2} aria-hidden="true" /></span><span>最愛</span></button><a className="mobile-tab" href="/closerice/settings/"><span className="mobile-tab-icon"><Settings size={22} strokeWidth={2.2} aria-hidden="true" /></span><span>設定</span></a></nav>
-    {viewingPhotos && <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewingPhotos(null); }}><section className="photo-dialog" role="dialog" aria-modal="true" aria-label={`${viewingPhotos.restaurant}的食物相片`}><div className="dialog-head"><h2>{viewingPhotos.restaurant}的食物相片</h2><button className="icon-button" onClick={() => setViewingPhotos(null)} aria-label="關閉相片">×</button></div><div className="photo-viewer-grid">{viewingPhotos.photos.map((photo) => <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer"><img src={photo.url} alt={photo.name} loading="lazy" /></a>)}</div></section></div>}
+    {viewingPhotos && <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewingPhotos(null); }}><section className="photo-dialog" role="dialog" aria-modal="true" aria-label={`${viewingPhotos.review.restaurant}的食物相片`}>
+      <div className="dialog-head"><div><h2>{viewingPhotos.review.restaurant}的食物相片</h2><p className="hint">{viewingPhotos.index + 1} / {viewingPhotos.review.photos.length}</p></div><button type="button" className="icon-button" onClick={() => setViewingPhotos(null)} aria-label="關閉相片">×</button></div>
+      <div className="photo-viewer-stage"><img src={viewingPhotos.review.photos[viewingPhotos.index].url} alt={`${viewingPhotos.review.restaurant}的食物相片，第 ${viewingPhotos.index + 1} 張`} />{viewingPhotos.review.photos.length > 1 && <><button type="button" className="photo-viewer-arrow previous" aria-label="上一張相片" onClick={() => setViewingPhotos((current) => current ? { ...current, index: (current.index - 1 + current.review.photos.length) % current.review.photos.length } : null)}><ChevronLeft size={26} aria-hidden="true" /></button><button type="button" className="photo-viewer-arrow next" aria-label="下一張相片" onClick={() => setViewingPhotos((current) => current ? { ...current, index: (current.index + 1) % current.review.photos.length } : null)}><ChevronRight size={26} aria-hidden="true" /></button></>}</div>
+      {viewingPhotos.review.photos.length > 1 && <div className="photo-viewer-thumbnails" aria-label="選擇相片">{viewingPhotos.review.photos.map((photo, index) => <button type="button" className={`photo-viewer-thumbnail ${index === viewingPhotos.index ? "active" : ""}`} key={photo.id} onClick={() => setViewingPhotos((current) => current ? { ...current, index } : null)} aria-label={`查看第 ${index + 1} 張相片`} aria-current={index === viewingPhotos.index ? "true" : undefined}><img src={photo.url} alt="" loading="lazy" decoding="async" /></button>)}</div>}
+    </section></div>}
     {opinionVisitId && <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpinionVisitId(null); }}><section className="dialog opinion-dialog" role="dialog" aria-modal="true" aria-labelledby="opinion-dialog-title">
       <div className="dialog-head"><div><h2 id="opinion-dialog-title">{collection.role === "viewer" ? "我的個人標記" : editingOpinionId ? "編輯我的食評" : "加入我的食評"}</h2><p className="hint">{collection.role === "viewer" ? "你的標記只會顯示給你。" : "評語和星級會顯示給群組成員；個人標記和標籤只會顯示給你。"}</p></div><button type="button" className="icon-button" onClick={() => setOpinionVisitId(null)} aria-label="關閉">×</button></div>
       {error && <div className="notice error" role="alert">{error}</div>}
