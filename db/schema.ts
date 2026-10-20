@@ -74,6 +74,7 @@ export const reviewOpinions = sqliteTable("review_opinions", {
   authorId: text("author_id").references(() => users.id),
   comment: text("comment").notNull().default(""),
   score: integer("score"),
+  selectedFoods: text("selected_foods"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [index("idx_review_opinions_review").on(table.reviewId), uniqueIndex("idx_review_opinions_author").on(table.reviewId, table.authorId)]);
@@ -108,8 +109,14 @@ export const personalTags = sqliteTable("personal_tags", {
   collectionId: text("collection_id").notNull().references(() => collections.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  color: text("color").notNull().default("#e8efdc"),
   createdAt: text("created_at").notNull(),
 }, (table) => [uniqueIndex("idx_personal_tags_collection_user_name").on(table.collectionId, table.userId, table.name)]);
+
+export const personalTagDefaults = sqliteTable("personal_tag_defaults", {
+  collectionId: text("collection_id").notNull().references(() => collections.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+}, (table) => [primaryKey({ columns: [table.collectionId, table.userId] })]);
 
 export const personalReviewStatus = sqliteTable("personal_review_status", {
   reviewId: text("review_id").notNull().references(() => reviews.id, { onDelete: "cascade" }),

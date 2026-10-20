@@ -1,10 +1,11 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { personalReviewStatus, personalReviewTags, photos, reviewOpinions, reviews, users } from "../../../db/schema";
+import { personalReviewTags, photos, reviewOpinions, reviews, users } from "../../../db/schema";
 import { errorResponse, reviewCreateInput, serverError } from "../../../lib/reviews";
 import { getCollectionAccess } from "../../../lib/auth";
 import { validTagIds } from "../../../lib/collection-api";
 import { writePersonalLabels } from "../../../lib/personal-labels";
+import { selectedFoodsForOrder } from "../../../lib/food-items";
 
 export async function GET(request: Request) {
   try {
@@ -19,18 +20,15 @@ export async function GET(request: Request) {
     const imageRows = (await Promise.all(idBatches.map((batch) => db.select({ id: photos.id, reviewId: photos.reviewId, originalName: photos.originalName }).from(photos).where(and(eq(photos.collectionId, access.collectionId), inArray(photos.reviewId, batch)))))).flat();
     const tagRows = (await Promise.all(idBatches.map((batch) => db.select({ reviewId: personalReviewTags.reviewId, tagId: personalReviewTags.tagId }).from(personalReviewTags)
       .where(and(eq(personalReviewTags.userId, access.user.id), inArray(personalReviewTags.reviewId, batch)))))).flat();
-    const statusRows = (await Promise.all(idBatches.map((batch) => db.select({ reviewId: personalReviewStatus.reviewId, status: personalReviewStatus.status }).from(personalReviewStatus)
-      .where(and(eq(personalReviewStatus.userId, access.user.id), inArray(personalReviewStatus.reviewId, batch)))))).flat();
     const opinionRows = (await Promise.all(idBatches.map((batch) => db.select({ id: reviewOpinions.id, reviewId: reviewOpinions.reviewId,
-      authorId: reviewOpinions.authorId, comment: reviewOpinions.comment, score: reviewOpinions.score,
+      authorId: reviewOpinions.authorId, comment: reviewOpinions.comment, score: reviewOpinions.score, selectedFoods: reviewOpinions.selectedFoods,
       createdAt: reviewOpinions.createdAt, updatedAt: reviewOpinions.updatedAt,
       authorName: sql<string>`coalesce(nullif(${users.displayName}, ''), ${users.name})`, authorPictureUrl: users.pictureUrl }).from(reviewOpinions)
       .leftJoin(users, eq(reviewOpinions.authorId, users.id))
       .where(inArray(reviewOpinions.reviewId, batch))))).flat();
     return Response.json({ reviews: rows.map((row) => ({
       ...row,
-      status: statusRows.find((status) => status.reviewId === row.id)?.status ?? "none",
-      opinions: opinionRows.filter((opinion) => opinion.reviewId === row.id),
+      opinions: opinionRows.filter((opinion) => opinion.reviewId === row.id).map((opinion) => ({ ...opinion, selectedFoods: opinion.selectedFoods ? JSON.parse(opinion.selectedFoods) as string[] : null })),
       tagIds: tagRows.filter((tag) => tag.reviewId === row.id).map((tag) => tag.tagId),
       photos: imageRows.filter((photo) => photo.reviewId === row.id).map((photo) => ({
         id: photo.id, url: `/api/photos/${photo.id}`, name: photo.originalName,
@@ -53,10 +51,12 @@ export async function POST(request: Request) {
     const db = getDb();
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const { comment, score, status, ...visit } = parsed.data;
+    const { comment, score, status, selectedFoods: requestedFoods, ...visit } = parsed.data;
+    const selectedFoods = selectedFoodsForOrder(visit.food, requestedFoods);
+    if (selectedFoods === undefined) return errorResponse("請從訂單食物中選擇至少一款。", 400);
     await db.batch([
       db.insert(reviews).values({ id, ownerId: access.user.id, collectionId: access.collectionId, createdBy: access.user.id, ...visit, comment: "", score: null, createdAt: now, updatedAt: now }),
-      db.insert(reviewOpinions).values({ id: crypto.randomUUID(), reviewId: id, authorId: access.user.id, comment, score, createdAt: now, updatedAt: now }),
+      db.insert(reviewOpinions).values({ id: crypto.randomUUID(), reviewId: id, authorId: access.user.id, comment, score, selectedFoods: selectedFoods ? JSON.stringify(selectedFoods) : null, createdAt: now, updatedAt: now }),
     ]);
     if (status !== "none" || tagIds.length) await writePersonalLabels(id, access.user.id, status, tagIds);
     return Response.json({ id }, { status: 201 });

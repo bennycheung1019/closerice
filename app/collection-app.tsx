@@ -7,7 +7,7 @@ import ReviewApp from "./review-app";
 import SettingsPage from "./settings-page";
 
 export type CollectionSummary = { id: string; name: string; role: "owner" | "editor" | "viewer" };
-export type CollectionTag = { id: string; name: string; createdBy: string };
+export type CollectionTag = { id: string; name: string; color: string; createdBy: string };
 type Session = { user: { id: string; email: string; name: string; googleName: string; displayName: string | null; pictureUrl: string | null }; isAdmin: boolean; collections: CollectionSummary[]; pendingTransfers: Array<{ collectionId: string; name: string }> };
 const settingsPage = typeof window !== "undefined" && /^\/closerice\/settings(?:\/|\/index\.html)?$/.test(window.location.pathname);
 
@@ -79,12 +79,19 @@ export default function CollectionApp() {
     void Promise.resolve().then(() => loadTags(selectedId)).catch((cause) => setError(cause instanceof Error ? cause.message : "無法讀取標籤。"));
   }, [selectedId]);
 
-  async function createTag(name: string): Promise<string> {
+  async function createTag(name: string, color: string): Promise<string> {
     const data = await responseJson<{ id: string }>(await collectionFetch("/api/tags", selectedId, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, color }),
     }));
     await loadTags(selectedId);
     return data.id;
+  }
+
+  async function updateTag(id: string, name: string, color: string) {
+    await responseJson(await collectionFetch(`/api/tags/${id}`, selectedId, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, color }),
+    }));
+    await loadTags(selectedId);
   }
 
   async function deleteTag(id: string) {
@@ -106,6 +113,6 @@ export default function CollectionApp() {
 
   return <>
     {error && <div className="global-notice notice error" role="alert">{error}<button className="icon-button" onClick={() => setError("")} aria-label="關閉">×</button></div>}
-    {collection ? <ReviewApp key={collection.id} collection={collection} collections={session.collections} onSelectCollection={selectCollection} user={session.user} tags={tagData.collectionId === selectedId ? tagData.tags : []} onCreateTag={createTag} onDeleteTag={deleteTag} /> : <main className="shell account-page"><div className="login-card"><h1>建立第一個食評群組</h1><p>建立後便可邀請家人或同事一起記錄。</p><a className="button primary" href="/closerice/settings/">前往設定</a></div></main>}
+    {collection ? <ReviewApp key={collection.id} collection={collection} collections={session.collections} onSelectCollection={selectCollection} user={session.user} tags={tagData.collectionId === selectedId ? tagData.tags : []} onCreateTag={createTag} onUpdateTag={updateTag} onDeleteTag={deleteTag} /> : <main className="shell account-page"><div className="login-card"><h1>建立第一個食評群組</h1><p>建立後便可邀請家人或同事一起記錄。</p><a className="button primary" href="/closerice/settings/">前往設定</a></div></main>}
   </>;
 }

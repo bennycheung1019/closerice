@@ -4,6 +4,10 @@ import { errorResponse, reviewCreateInput, serverError } from "../../../../lib/r
 import { getCollectionAccess } from "../../../../lib/auth";
 import { env } from "cloudflare:workers";
 import { writePersonalLabels } from "../../../../lib/personal-labels";
+import { and, eq } from "drizzle-orm";
+import { personalTags } from "../../../../db/schema";
+import { ensureDefaultPersonalTags } from "../../../../lib/collection-api";
+import { selectedFoodsForOrder } from "../../../../lib/food-items";
 
 export async function POST(request: Request) {
   if (!(request.headers.get("content-type") ?? "").includes("application/json")) {
@@ -31,7 +35,9 @@ export async function POST(request: Request) {
     if (!access) return errorResponse("請先登入並選擇可編輯的群組。", 403);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const { comment, score, status, ...visit } = parsed.data;
+    const { comment, score, status, selectedFoods: requestedFoods, ...visit } = parsed.data;
+    const selectedFoods = selectedFoodsForOrder(visit.food, requestedFoods);
+    if (selectedFoods === undefined) return errorResponse("請從訂單食物中選擇至少一款。", 400);
     await getDb().batch([getDb().insert(reviews).values({
       id,
       ownerId: access.user.id,
@@ -42,8 +48,13 @@ export async function POST(request: Request) {
       score: null,
       createdAt: now,
       updatedAt: now,
-    }), getDb().insert(reviewOpinions).values({ id: crypto.randomUUID(), reviewId: id, authorId: access.user.id, comment, score, createdAt: now, updatedAt: now })]);
-    if (status !== "none") await writePersonalLabels(id, access.user.id, status, []);
+    }), getDb().insert(reviewOpinions).values({ id: crypto.randomUUID(), reviewId: id, authorId: access.user.id, comment, score, selectedFoods: selectedFoods ? JSON.stringify(selectedFoods) : null, createdAt: now, updatedAt: now })]);
+    if (status !== "none") {
+      await ensureDefaultPersonalTags(access.collectionId, access.user.id);
+      const name = status === "favorite" ? "☆ 最愛" : "⊘ 黑名單";
+      const tag = await getDb().select({ id: personalTags.id }).from(personalTags).where(and(eq(personalTags.collectionId, access.collectionId), eq(personalTags.userId, access.user.id), eq(personalTags.name, name))).get();
+      if (tag) await writePersonalLabels(id, access.user.id, "none", [tag.id]);
+    }
     return Response.json({ id, url: env.PUBLIC_SITE_URL ?? new URL("/", request.url).toString() }, { status: 201 });
   } catch (error) {
     return serverError(error);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, ChevronRight, Heart, List, MoreHorizontal, Plus, Settings, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, List, MoreHorizontal, Plus, Settings, X } from "lucide-react";
 import { collectionFetch, responseJson } from "../lib/client-api";
 import type { CollectionSummary } from "./collection-app";
 
@@ -207,6 +207,6 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
       {panel === "rename" && collection?.role === "owner" && <><p className="settings-panel-hint">更改「{collection.name}」的顯示名稱。</p><form className="settings-panel-form" onSubmit={renameCollection}><label className="settings-field">群組名稱<input required autoFocus maxLength={60} value={renameName} onChange={(event) => setRenameName(event.target.value)} /></label><button className="button primary" type="submit" disabled={busy || !renameName.trim() || renameName.trim() === collection.name}>儲存名稱</button></form></>}
       {panel === "delete" && collection?.role === "owner" && <><p className="settings-panel-hint">刪除後，「{collection.name}」的食評、相片、標籤、邀請和成員權限都會永久移除，無法復原。其他群組不受影響。</p><form className="settings-panel-form" onSubmit={deleteCollection}><label className="settings-field">輸入「{collection.name}」以確認<input autoFocus autoComplete="off" value={deleteName} onChange={(event) => setDeleteName(event.target.value)} /></label><button className="button danger" type="submit" disabled={busy || deleteName !== collection.name}>永久刪除群組</button></form></>}
     </section></div>}
-    <nav className={`mobile-tabs settings-tabs ${collection?.role === "viewer" ? "viewer-tabs" : ""}`} aria-label="底部分頁"><a className="mobile-tab" href="/closerice/"><span className="mobile-tab-icon"><List size={22} aria-hidden="true" /></span><span>食評</span></a>{collection?.role !== "viewer" && <a className="mobile-tab" href="/closerice/?view=new"><span className="mobile-tab-icon"><Plus size={23} aria-hidden="true" /></span><span>新增</span></a>}<a className="mobile-tab" href="/closerice/?view=favorite"><span className="mobile-tab-icon"><Heart size={22} aria-hidden="true" /></span><span>最愛</span></a><a className="mobile-tab active" aria-current="page" href="/closerice/settings/"><span className="mobile-tab-icon"><Settings size={22} aria-hidden="true" /></span><span>設定</span></a></nav>
+    <nav className={`mobile-tabs settings-tabs ${collection?.role === "viewer" ? "viewer-tabs" : ""}`} aria-label="底部分頁"><a className="mobile-tab" href="/closerice/"><span className="mobile-tab-icon"><List size={22} aria-hidden="true" /></span><span>食評</span></a>{collection?.role !== "viewer" && <a className="mobile-tab" href="/closerice/?view=new"><span className="mobile-tab-icon"><Plus size={23} aria-hidden="true" /></span><span>新增</span></a>}<a className="mobile-tab active" aria-current="page" href="/closerice/settings/"><span className="mobile-tab-icon"><Settings size={22} aria-hidden="true" /></span><span>設定</span></a></nav>
   </main>;
 }

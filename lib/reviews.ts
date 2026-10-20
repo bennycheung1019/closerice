@@ -16,11 +16,12 @@ export const reviewInput = z.object({
   district: districtInput.nullable().default(null),
 });
 
-export const reviewCreateInput = reviewInput.extend({ district: districtInput });
+export const reviewCreateInput = reviewInput.extend({ district: districtInput, selectedFoods: z.array(z.string()).max(40).optional() });
 
 export const opinionInput = z.object({
   comment: z.string().trim().max(3000).default(""),
   score: z.number().int().min(1).max(5).nullable().default(null),
+  selectedFoods: z.array(z.string()).max(40).optional(),
 }).refine((value) => Boolean(value.comment) || value.score !== null);
 
 export type ReviewInput = z.infer<typeof reviewInput>;
