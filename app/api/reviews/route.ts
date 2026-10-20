@@ -12,18 +12,18 @@ export async function GET(request: Request) {
     const db = getDb();
     const rows = await db.select().from(reviews)
       .where(eq(reviews.collectionId, access.collectionId))
-      .orderBy(desc(reviews.diningDate), desc(reviews.createdAt)).limit(300);
-    const imageRows = rows.length
-      ? await db.select({ id: photos.id, reviewId: photos.reviewId, originalName: photos.originalName }).from(photos).where(and(eq(photos.collectionId, access.collectionId), inArray(photos.reviewId, rows.map((row) => row.id))))
-      : [];
-    const tagRows = rows.length ? await db.select({ reviewId: reviewTags.reviewId, tagId: reviewTags.tagId }).from(reviewTags)
-      .where(inArray(reviewTags.reviewId, rows.map((row) => row.id))) : [];
-    const opinionRows = rows.length ? await db.select({ id: reviewOpinions.id, reviewId: reviewOpinions.reviewId,
+      .orderBy(desc(reviews.diningDate), desc(reviews.createdAt));
+    const ids = rows.map((row) => row.id);
+    const idBatches = Array.from({ length: Math.ceil(ids.length / 300) }, (_, index) => ids.slice(index * 300, (index + 1) * 300));
+    const imageRows = (await Promise.all(idBatches.map((batch) => db.select({ id: photos.id, reviewId: photos.reviewId, originalName: photos.originalName }).from(photos).where(and(eq(photos.collectionId, access.collectionId), inArray(photos.reviewId, batch)))))).flat();
+    const tagRows = (await Promise.all(idBatches.map((batch) => db.select({ reviewId: reviewTags.reviewId, tagId: reviewTags.tagId }).from(reviewTags)
+      .where(inArray(reviewTags.reviewId, batch))))).flat();
+    const opinionRows = (await Promise.all(idBatches.map((batch) => db.select({ id: reviewOpinions.id, reviewId: reviewOpinions.reviewId,
       authorId: reviewOpinions.authorId, comment: reviewOpinions.comment, score: reviewOpinions.score,
       createdAt: reviewOpinions.createdAt, updatedAt: reviewOpinions.updatedAt,
       authorName: users.name, authorPictureUrl: users.pictureUrl }).from(reviewOpinions)
       .leftJoin(users, eq(reviewOpinions.authorId, users.id))
-      .where(inArray(reviewOpinions.reviewId, rows.map((row) => row.id))) : [];
+      .where(inArray(reviewOpinions.reviewId, batch))))).flat();
     return Response.json({ reviews: rows.map((row) => ({
       ...row,
       opinions: opinionRows.filter((opinion) => opinion.reviewId === row.id),
