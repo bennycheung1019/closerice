@@ -7,6 +7,7 @@ export const tagColors = [
 export const defaultTagColor = tagColors[2];
 
 export function tagTextColor(color: string): string {
+  if (color.toLowerCase() === "#e45454") return "#ffffff";
   const channels = [1, 3, 5].map((start) => {
     const value = Number.parseInt(color.slice(start, start + 2), 16) / 255;
     return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
