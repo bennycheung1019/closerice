@@ -8,7 +8,7 @@ import SettingsPage from "./settings-page";
 
 export type CollectionSummary = { id: string; name: string; role: "owner" | "editor" | "viewer" };
 export type CollectionTag = { id: string; name: string; createdBy: string };
-type Session = { user: { id: string; email: string; name: string; googleName: string; displayName: string | null; pictureUrl: string | null }; collections: CollectionSummary[]; pendingTransfers: Array<{ collectionId: string; name: string }> };
+type Session = { user: { id: string; email: string; name: string; googleName: string; displayName: string | null; pictureUrl: string | null }; isAdmin: boolean; collections: CollectionSummary[]; pendingTransfers: Array<{ collectionId: string; name: string }> };
 const settingsPage = typeof window !== "undefined" && /^\/closerice\/settings(?:\/|\/index\.html)?$/.test(window.location.pathname);
 
 export default function CollectionApp() {
@@ -16,7 +16,12 @@ export default function CollectionApp() {
   const [selectedId, setSelectedId] = useState("");
   const [tagData, setTagData] = useState<{ collectionId: string; tags: CollectionTag[] }>({ collectionId: "", tags: [] });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("authError") ? "Google 登入未完成，請重試。" : "");
+  const [error, setError] = useState(() => {
+    const reason = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("authError") : null;
+    if (reason === "disabled") return "這個帳戶已停用，請聯絡網站管理員。";
+    if (reason === "registrationClosed") return "暫時不接受新帳戶。";
+    return reason ? "Google 登入未完成，請重試。" : "";
+  });
 
   async function loadSession(preferredId?: string) {
     const response = await collectionFetch("/api/me");
@@ -97,7 +102,7 @@ export default function CollectionApp() {
   if (!session) return <main className="shell account-page"><div className="login-card"><div className="brand"><img className="brand-logo" src={pageAsset("brand-logo.png?v=3")} alt="Closerice" /></div><h1>一齊記低每一餐。</h1><p>Closerice 是與家人、朋友和同事分享食評的筆記。建立不同群組，記錄餐廳、食物、評分和相片，並由群組擁有人決定誰可以查看或編輯。</p><a className="button primary" href={apiUrl("/api/auth/google/start")}>使用 Google 登入</a>{typeof window !== "undefined" && sessionStorage.getItem("closerice_invite") && <p className="hint">登入後會自動加入受邀群組。</p>}{error && <p className="notice error" role="alert">{error}</p>}<nav className="legal-links" aria-label="網站資料"><a href="/closerice/privacy.html">私隱政策</a><a href="/closerice/terms.html">使用條款</a></nav></div></main>;
 
   const collection = session.collections.find((item) => item.id === selectedId);
-  if (settingsPage) return <><SettingsPage user={session.user} collections={session.collections} pendingTransfers={session.pendingTransfers} selectedId={selectedId} onSelect={selectCollection} onSessionChanged={loadSession} onLogout={logout} />{error && <div className="global-notice notice error" role="alert">{error}<button className="icon-button" onClick={() => setError("")} aria-label="關閉">×</button></div>}</>;
+  if (settingsPage) return <><SettingsPage user={session.user} isAdmin={session.isAdmin} collections={session.collections} pendingTransfers={session.pendingTransfers} selectedId={selectedId} onSelect={selectCollection} onSessionChanged={loadSession} onLogout={logout} />{error && <div className="global-notice notice error" role="alert">{error}<button className="icon-button" onClick={() => setError("")} aria-label="關閉">×</button></div>}</>;
 
   return <>
     {error && <div className="global-notice notice error" role="alert">{error}<button className="icon-button" onClick={() => setError("")} aria-label="關閉">×</button></div>}

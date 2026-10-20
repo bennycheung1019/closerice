@@ -1,8 +1,8 @@
 import { env } from "cloudflare:workers";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { collections, invites, memberships, ownershipTransfers, photos, reviews, tags, users } from "../db/schema";
-import { getCollectionAccess, getSessionUser, newInviteToken, refreshSession, tokenHash } from "./auth";
+import { collections, invites, memberships, ownershipTransfers, photos, reviews, siteSettings, tags, users } from "../db/schema";
+import { getCollectionAccess, getSessionUser, isSiteAdmin, newInviteToken, refreshSession, tokenHash } from "./auth";
 import { errorResponse, serverError } from "./reviews";
 
 type MemberRole = "editor" | "viewer";
@@ -25,7 +25,7 @@ export async function handleCollectionApi(request: Request, path: string): Promi
         .innerJoin(collections, eq(ownershipTransfers.collectionId, collections.id))
         .where(and(eq(ownershipTransfers.toUserId, user.id), gt(ownershipTransfers.expiresAt, Date.now())));
       const renewedCookie = await refreshSession(request, user.id);
-      return Response.json({ user, collections: [...owned.map((item) => ({ ...item, role: "owner" })), ...joined], pendingTransfers: pending }, {
+      return Response.json({ user, isAdmin: await isSiteAdmin(user.id), collections: [...owned.map((item) => ({ ...item, role: "owner" })), ...joined], pendingTransfers: pending }, {
         headers: renewedCookie ? { ...noStore, "Set-Cookie": renewedCookie } : noStore,
       });
     }
@@ -40,6 +40,8 @@ export async function handleCollectionApi(request: Request, path: string): Promi
     }
 
     if (path === "/api/collections" && request.method === "POST") {
+      const newGroups = await db.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, "new_groups_enabled")).get();
+      if (newGroups?.value === "false") return errorResponse("暫時不可建立新群組。", 403);
       const body = await request.json().catch(() => null) as { name?: unknown } | null;
       const name = typeof body?.name === "string" ? body.name.trim() : "";
       if (!name || name.length > 60) return errorResponse("請輸入 1 至 60 字的群組名稱。", 400);
