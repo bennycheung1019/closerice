@@ -10,7 +10,10 @@ type Members = { owner: Member | null; members: Member[]; invites: Array<{ id: s
 
 function MemberAvatar({ name, pictureUrl }: { name: string; pictureUrl: string | null }) {
   const [failed, setFailed] = useState(false);
-  return pictureUrl && !failed ? <img className="member-avatar" src={pictureUrl} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} /> : <span className="member-avatar member-avatar-fallback" aria-hidden="true">{name.trim().slice(0, 1) || "?"}</span>;
+  return <span className="member-avatar-wrap" aria-label="Google 帳戶">
+    {pictureUrl && !failed ? <img className="member-avatar" src={pictureUrl} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} /> : <span className="member-avatar member-avatar-fallback" aria-hidden="true">{name.trim().slice(0, 1) || "?"}</span>}
+    <span className="member-google-mark" aria-hidden="true">G</span>
+  </span>;
 }
 
 export default function SettingsPage({ user, collections, pendingTransfers, selectedId, onSelect, onSessionChanged, onLogout }: {
