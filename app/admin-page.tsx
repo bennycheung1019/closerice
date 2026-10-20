@@ -13,9 +13,9 @@ type Overview = { admin: { email: string }; counts: { users: number; collections
 type User = { id: string; email: string; name: string; displayName: string | null; pictureUrl: string | null; disabledAt: number | null; createdAt: string; groupCount: number; opinionCount: number; isAdmin: number };
 type Group = { id: string; name: string; ownerUserId: string | null; ownerName: string | null; ownerEmail: string | null; memberCount: number; reviewCount: number; createdAt: string };
 type Member = { id: string; email: string; name: string; pictureUrl: string | null; role: "editor" | "viewer"; disabledAt: number | null };
-type GroupDetail = { collection: { id: string; name: string; owner_user_id: string | null }; members: Member[]; invites: Array<{ id: string; email: string; role: string; expiresAt: number }>; tags: Array<{ id: string; name: string }> };
+type GroupDetail = { collection: { id: string; name: string; owner_user_id: string | null }; members: Member[]; invites: Array<{ id: string; email: string; role: string; expiresAt: number }>; tags: Array<{ id: string; name: string; userId: string }>; tagUsers: Array<{ id: string; name: string; email: string }> };
 type Review = { id: string; collectionId: string; collectionName: string; restaurant: string; food: string; diningDate: string; channel: string; status: string; amountCents: number | null; orderNumber: string; district: string | null; createdBy: string | null; creatorName: string | null; opinionCount: number; averageScore: number | null };
-type ReviewDetail = { review: { id: string; collectionId: string; restaurant: string; food: string; diningDate: string; channel: string; status: string; amountCents: number | null; orderNumber: string; district: string | null }; opinions: Array<{ id: string; authorId: string | null; authorName: string | null; comment: string; score: number | null }>; photos: Array<{ id: string; name: string; contentType: string }>; tags: Array<{ id: string; name: string }>; availableTags: Array<{ id: string; name: string }> };
+type ReviewDetail = { review: { id: string; collectionId: string; restaurant: string; food: string; diningDate: string; channel: string; status: string; amountCents: number | null; orderNumber: string; district: string | null }; opinions: Array<{ id: string; authorId: string | null; authorName: string | null; comment: string; score: number | null }>; photos: Array<{ id: string; name: string; contentType: string }>; labels: Array<{ id: string; name: string; email: string; status: string; tagIds: string[] }>; availableTags: Array<{ id: string; name: string; userId: string }> };
 type ListResult<T> = { nextOffset: number | null } & T;
 const sections: Array<{ id: Section; label: string }> = [
   { id: "overview", label: "概覽" }, { id: "users", label: "用戶" }, { id: "collections", label: "食評群組" }, { id: "reviews", label: "食評" }, { id: "settings", label: "網站設定" },
@@ -26,7 +26,7 @@ const actionNames: Record<string, string> = {
   "user.update": "更新用戶", "user.sessions.revoke": "登出用戶", "collection.update": "更新群組", "collection.delete": "刪除群組",
   "membership.upsert": "加入成員", "membership.update": "更改權限", "membership.remove": "移除成員", "invite.create": "建立邀請",
   "invite.revoke": "撤銷邀請", "tag.create": "新增標籤", "tag.delete": "刪除標籤", "review.update": "更新紀錄",
-  "review.delete": "刪除紀錄", "opinion.update": "更新評語", "opinion.delete": "刪除評語", "photo.delete": "刪除相片", "settings.update": "更新網站設定",
+  "review.delete": "刪除紀錄", "review.labels.update": "更新個人標記", "opinion.update": "更新評語", "opinion.delete": "刪除評語", "photo.delete": "刪除相片", "settings.update": "更新網站設定",
 };
 const read = async <T,>(path: string) => responseJson<T>(await collectionFetch(path));
 const write = async <T,>(path: string, method: "POST" | "PATCH" | "DELETE", body?: unknown) => responseJson<T>(await collectionFetch(path, undefined, {
@@ -157,10 +157,12 @@ function GroupEditor({ id, busy, onClose, onChange }: {
   const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("editor");
   const [inviteLink, setInviteLink] = useState("");
   const [tagName, setTagName] = useState("");
+  const [tagUserId, setTagUserId] = useState("");
   const [deleteName, setDeleteName] = useState("");
   const refresh = useCallback(async () => {
     const result = await read<GroupDetail>("/api/admin/collections/" + id);
     setData(result); setName(result.collection.name); setOwnerId(result.collection.owner_user_id ?? "");
+    setTagUserId((current) => result.tagUsers.some((person) => person.id === current) ? current : result.tagUsers[0]?.id ?? "");
   }, [id]);
   useEffect(() => { void Promise.resolve().then(refresh).catch((cause) => setError(cause instanceof Error ? cause.message : "無法讀取群組。")); }, [refresh]);
   async function act(task: () => Promise<unknown>, message: string, close = false) {
@@ -171,7 +173,7 @@ function GroupEditor({ id, busy, onClose, onChange }: {
     <form className="admin-form" onSubmit={(event) => { event.preventDefault(); void act(() => write("/api/admin/collections/" + id, "PATCH", { name, ownerUserId: ownerId }), "群組已更新。"); }}><h3>群組資料</h3><label className="admin-field">群組名稱<input required maxLength={60} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="admin-field">擁有人<select value={ownerId} onChange={(event) => setOwnerId(event.target.value)}><option value={data.collection.owner_user_id ?? ""}>目前擁有人</option>{data.members.filter((member) => !member.disabledAt).map((member) => <option key={member.id} value={member.id}>{member.name} · {member.email}</option>)}</select></label><p className="admin-muted">更換擁有人後，原擁有人會變成可編輯成員。</p><button className="button primary" disabled={busy || (name === data.collection.name && ownerId === data.collection.owner_user_id)}>儲存群組</button></form>
     <section className="admin-subsection"><h3>成員與權限</h3>{data.members.map((member) => <div className="admin-member-row" key={member.id}><Avatar name={member.name} src={member.pictureUrl} /><div className="admin-member-name"><strong>{member.name}</strong><small>{member.email}</small></div><select aria-label={member.name + " 的權限"} value={member.role} disabled={busy} onChange={(event) => void act(() => write("/api/admin/collections/" + id + "/members/" + member.id, "PATCH", { role: event.target.value }), "成員權限已更新。")}><option value="editor">可編輯</option><option value="viewer">只可查看</option></select><button type="button" className="admin-text-danger" disabled={busy} onClick={() => { if (window.confirm("移除 " + member.name + " 的群組權限？")) void act(() => write("/api/admin/collections/" + id + "/members/" + member.id, "DELETE"), "成員已移除。"); }}>移除</button></div>)}<form className="admin-inline" onSubmit={(event) => { event.preventDefault(); void act(() => write("/api/admin/collections/" + id + "/members", "POST", { email: memberEmail, role: memberRole }), "成員已加入。").then(() => setMemberEmail("")); }}><input type="email" required value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="現有用戶的 Google 電郵" /><select aria-label="新成員權限" value={memberRole} onChange={(event) => setMemberRole(event.target.value as "editor" | "viewer")}><option value="editor">可編輯</option><option value="viewer">只可查看</option></select><button className="button secondary" disabled={busy}>加入</button></form></section>
     <section className="admin-subsection"><h3>邀請</h3>{data.invites.map((invite) => <div className="admin-simple-row" key={invite.id}><span>{invite.email} · {roleNames[invite.role]}</span><button type="button" className="admin-text-danger" disabled={busy} onClick={() => void act(() => write("/api/admin/collections/" + id + "/invites/" + invite.id, "DELETE"), "邀請已撤銷。")}>撤銷</button></div>)}<form className="admin-inline" onSubmit={(event) => { event.preventDefault(); void write<{ link: string }>("/api/admin/collections/" + id + "/invites", "POST", { email: inviteEmail, role: inviteRole }).then((result) => { setInviteLink(result.link); setInviteEmail(""); void refresh(); }).catch((cause) => setError(cause instanceof Error ? cause.message : "建立邀請失敗。")); }}><input type="email" required value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="受邀人的 Google 電郵" /><select aria-label="邀請權限" value={inviteRole} onChange={(event) => setInviteRole(event.target.value as "editor" | "viewer")}><option value="editor">可編輯</option><option value="viewer">只可查看</option></select><button className="button secondary" disabled={busy}>產生連結</button></form>{inviteLink && <label className="admin-field">邀請連結<input readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label>}</section>
-    <section className="admin-subsection"><h3>自訂標籤</h3><div className="admin-chip-list">{data.tags.map((tag) => <span className="admin-chip" key={tag.id}>{tag.name}<button type="button" aria-label={"刪除 " + tag.name} onClick={() => { if (window.confirm("刪除標籤「" + tag.name + "」？")) void act(() => write("/api/admin/collections/" + id + "/tags/" + tag.id, "DELETE"), "標籤已刪除。"); }}>×</button></span>)}</div><form className="admin-inline" onSubmit={(event) => { event.preventDefault(); void act(() => write("/api/admin/collections/" + id + "/tags", "POST", { name: tagName }), "標籤已建立。").then(() => setTagName("")); }}><input required maxLength={24} value={tagName} onChange={(event) => setTagName(event.target.value)} placeholder="新標籤" /><button className="button secondary" disabled={busy}>新增</button></form></section>
+    <section className="admin-subsection"><h3>成員的個人標籤</h3><label className="admin-field">選擇成員<select value={tagUserId} onChange={(event) => setTagUserId(event.target.value)}>{data.tagUsers.map((person) => <option key={person.id} value={person.id}>{person.name} · {person.email}</option>)}</select></label><div className="admin-chip-list">{data.tags.filter((tag) => tag.userId === tagUserId).map((tag) => <span className="admin-chip" key={tag.id}>{tag.name}<button type="button" aria-label={"刪除 " + tag.name} onClick={() => { if (window.confirm("刪除這位成員的標籤「" + tag.name + "」？")) void act(() => write("/api/admin/collections/" + id + "/tags/" + tag.id, "DELETE"), "標籤已刪除。"); }}>×</button></span>)}</div><form className="admin-inline" onSubmit={(event) => { event.preventDefault(); void act(() => write("/api/admin/collections/" + id + "/tags", "POST", { name: tagName, userId: tagUserId }), "標籤已建立。").then(() => setTagName("")); }}><input required maxLength={24} value={tagName} onChange={(event) => setTagName(event.target.value)} placeholder="新標籤" /><button className="button secondary" disabled={busy || !tagUserId || data.tags.filter((tag) => tag.userId === tagUserId).length >= 10}>新增</button></form></section>
     <section className="admin-danger-box"><h3>刪除群組</h3><p>會永久刪除群組及其食評、評語和相片。請輸入完整群組名稱。</p><input value={deleteName} onChange={(event) => setDeleteName(event.target.value)} placeholder={data.collection.name} /><button className="button danger" disabled={busy || deleteName !== data.collection.name} onClick={() => void act(() => write("/api/admin/collections/" + id, "DELETE", { name: deleteName }), "群組已刪除。", true)}>永久刪除群組</button></section>
   </>}</Panel>;
 }
@@ -182,12 +184,11 @@ function ReviewEditor({ id, busy, onClose, onChange }: {
 }) {
   const [data, setData] = useState<ReviewDetail | null>(null);
   const [form, setForm] = useState<ReviewDetail["review"] | null>(null);
-  const [tagIds, setTagIds] = useState<string[]>([]);
   const [deleteName, setDeleteName] = useState("");
   const [error, setError] = useState("");
   const refresh = useCallback(async () => {
     const result = await read<ReviewDetail>("/api/admin/reviews/" + id);
-    setData(result); setForm(result.review); setTagIds(result.tags.map((tag) => tag.id));
+    setData(result); setForm(result.review);
   }, [id]);
   useEffect(() => { void Promise.resolve().then(refresh).catch((cause) => setError(cause instanceof Error ? cause.message : "無法讀取紀錄。")); }, [refresh]);
   async function act(task: () => Promise<unknown>, message: string, close = false) {
@@ -200,23 +201,36 @@ function ReviewEditor({ id, busy, onClose, onChange }: {
   return <Panel title="管理用餐紀錄" onClose={onClose}>{error && <SmallNotice danger>{error}</SmallNotice>}{!data || !form ? <p>正在載入…</p> : <>
     <form className="admin-form" onSubmit={(event) => { event.preventDefault(); void act(() => write("/api/admin/reviews/" + id, "PATCH", {
       diningDate: form.diningDate, restaurant: form.restaurant, food: form.food, channel: form.channel,
-      status: form.status, orderNumber: form.orderNumber, amountCents: form.amountCents, district: form.district,
-      comment: "", score: null, tagIds,
+      orderNumber: form.orderNumber, amountCents: form.amountCents, district: form.district,
+      comment: "", score: null,
     }), "用餐紀錄已更新。"); }}>
       <h3>用餐資料</h3>
       <div className="admin-form-grid"><label className="admin-field">日期<input type="date" required value={form.diningDate} onChange={(event) => update("diningDate", event.target.value)} /></label><label className="admin-field">餐廳<input required maxLength={120} value={form.restaurant} onChange={(event) => update("restaurant", event.target.value)} /></label></div>
       <label className="admin-field">食物<textarea required maxLength={1000} value={form.food} onChange={(event) => update("food", event.target.value)} /></label>
       <div className="admin-form-grid"><label className="admin-field">用餐方式<select value={form.channel} onChange={(event) => update("channel", event.target.value)}>{Object.entries(channelNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="admin-field">地區<select value={form.district ?? ""} onChange={(event) => update("district", event.target.value || null)}><option value="">未指定</option>{districtGroups.map((group) => <optgroup key={group.label} label={group.label}>{group.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</optgroup>)}</select></label></div>
       <div className="admin-form-grid"><label className="admin-field">訂單編號<input maxLength={80} value={form.orderNumber} onChange={(event) => update("orderNumber", event.target.value)} /></label><label className="admin-field">實付金額 HK$<input type="number" min="0" step="0.01" value={form.amountCents === null ? "" : (form.amountCents / 100).toFixed(2)} onChange={(event) => update("amountCents", event.target.value === "" ? null : Math.round(Number(event.target.value) * 100))} /></label></div>
-      <label className="admin-field">標記<select value={form.status} onChange={(event) => update("status", event.target.value)}><option value="none">無</option><option value="favorite">最愛</option><option value="blacklist">黑名單</option></select></label>
-      {data.availableTags.length > 0 && <div className="admin-field"><span>自訂標籤</span><div className="admin-chip-list">{data.availableTags.map((tag) => <label className="admin-chip" key={tag.id}><input type="checkbox" checked={tagIds.includes(tag.id)} onChange={(event) => setTagIds(event.target.checked ? [...tagIds, tag.id] : tagIds.filter((value) => value !== tag.id))} />{tag.name}</label>)}</div></div>}
       <button className="button primary" disabled={busy}>儲存紀錄</button>
     </form>
+    <section className="admin-subsection"><h3>成員的個人標記</h3>{data.labels.map((label) => <PersonalLabelEditor key={label.id + label.status + label.tagIds.join(",")} label={label} tags={data.availableTags.filter((tag) => tag.userId === label.id)} busy={busy} onSave={async (value) => { await act(() => write("/api/admin/reviews/" + id + "/labels/" + label.id, "PATCH", value), "個人標記已更新。"); }} />)}</section>
     <section className="admin-subsection"><h3>成員評語與評分</h3>{data.opinions.length ? data.opinions.map((opinion) => <OpinionEditor key={opinion.id} opinion={opinion} busy={busy} onSave={async (value) => { await act(() => write("/api/admin/opinions/" + opinion.id, "PATCH", value), "評語已更新。"); }} onDelete={async () => { await act(() => write("/api/admin/opinions/" + opinion.id, "DELETE"), "評語已刪除。"); }} />) : <p className="admin-muted">這筆紀錄沒有評語。</p>}</section>
     <section className="admin-subsection"><h3>食物相片</h3>{data.photos.length ? <div className="admin-photo-grid">{data.photos.map((photo) => <figure key={photo.id}><img src={apiUrl("/api/admin/photos/" + photo.id)} alt={photo.name} /><figcaption>{photo.name}</figcaption><button className="admin-text-danger" type="button" onClick={() => { if (window.confirm("刪除這張食物相片？")) void act(() => write("/api/admin/photos/" + photo.id, "DELETE"), "相片已刪除。"); }}>刪除相片</button></figure>)}</div> : <p className="admin-muted">沒有食物相片。</p>}</section>
     <section className="admin-danger-box"><h3>刪除整筆紀錄</h3><p>此操作會連同所有成員評語及相片永久刪除。請輸入餐廳名稱。</p><input value={deleteName} onChange={(event) => setDeleteName(event.target.value)} placeholder={data.review.restaurant} /><button className="button danger" disabled={busy || deleteName !== data.review.restaurant} onClick={() => void act(() => write("/api/admin/reviews/" + id, "DELETE"), "紀錄已刪除。", true)}>永久刪除紀錄</button></section>
   </>}</Panel>;
 }
+function PersonalLabelEditor({ label, tags, busy, onSave }: {
+  label: ReviewDetail["labels"][number]; tags: ReviewDetail["availableTags"]; busy: boolean;
+  onSave: (value: { status: string; tagIds: string[] }) => Promise<void>;
+}) {
+  const [status, setStatus] = useState(label.status);
+  const [tagIds, setTagIds] = useState(label.tagIds);
+  return <form className="admin-opinion" onSubmit={(event) => { event.preventDefault(); void onSave({ status, tagIds }); }}>
+    <strong>{label.name} · {label.email}</strong>
+    <label className="admin-field">標記<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="none">無</option><option value="favorite">最愛</option><option value="blacklist">黑名單</option></select></label>
+    {tags.length > 0 && <div className="admin-field"><span>自訂標籤</span><div className="admin-chip-list">{tags.map((tag) => <label className="admin-chip" key={tag.id}><input type="checkbox" checked={tagIds.includes(tag.id)} onChange={(event) => setTagIds(event.target.checked ? [...tagIds, tag.id] : tagIds.filter((id) => id !== tag.id))} />{tag.name}</label>)}</div></div>}
+    <button className="button secondary" disabled={busy || (status === label.status && tagIds.length === label.tagIds.length && tagIds.every((id) => label.tagIds.includes(id)))}>儲存個人標記</button>
+  </form>;
+}
+
 function OpinionEditor({ opinion, busy, onSave, onDelete }: {
   opinion: ReviewDetail["opinions"][number]; busy: boolean;
   onSave: (value: { comment: string; score: number | null }) => Promise<void>; onDelete: () => Promise<void>;

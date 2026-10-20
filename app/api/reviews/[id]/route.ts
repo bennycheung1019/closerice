@@ -1,10 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getDb } from "../../../../db";
-import { photos, reviewOpinions, reviewTags, reviews } from "../../../../db/schema";
+import { photos, reviewOpinions, reviews } from "../../../../db/schema";
 import { errorResponse, reviewInput, serverError } from "../../../../lib/reviews";
 import { getCollectionAccess } from "../../../../lib/auth";
 import { validTagIds } from "../../../../lib/collection-api";
+import { writePersonalLabels } from "../../../../lib/personal-labels";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -17,19 +18,16 @@ export async function PATCH(request: Request, context: Context) {
     const access = await getCollectionAccess(request, true);
     if (!access) return errorResponse("你沒有編輯食評的權限。", 403);
     const submittedTagIds = (body as { tagIds?: unknown })?.tagIds;
-    const tagIds = submittedTagIds === undefined ? undefined : await validTagIds(access.collectionId, submittedTagIds);
-    if (tagIds === null) return errorResponse("請選擇這個群組的有效標籤（最多 10 個）。", 400);
+    const tagIds = submittedTagIds === undefined ? undefined : await validTagIds(access.collectionId, access.user.id, submittedTagIds);
+    if (tagIds === null) return errorResponse("請選擇自己的有效標籤（最多 10 個）。", 400);
     const db = getDb();
     const row = await db.select({ createdBy: reviews.createdBy }).from(reviews).where(and(eq(reviews.id, id), eq(reviews.collectionId, access.collectionId))).get();
     if (!row) return errorResponse("找不到紀錄。", 404);
     if (row.createdBy !== access.user.id) return errorResponse("只有建立這次用餐的成員可以修改用餐資料。", 403);
     const { diningDate, restaurant, food, channel, status, orderNumber, amountCents, district } = parsed.data;
     const now = new Date().toISOString();
-    await db.update(reviews).set({ diningDate, restaurant, food, channel, status, orderNumber, amountCents, district, updatedAt: now }).where(and(eq(reviews.id, id), eq(reviews.collectionId, access.collectionId)));
-    if (tagIds) {
-      await db.delete(reviewTags).where(eq(reviewTags.reviewId, id));
-      if (tagIds.length) await db.insert(reviewTags).values(tagIds.map((tagId) => ({ reviewId: id, tagId })));
-    }
+    await db.update(reviews).set({ diningDate, restaurant, food, channel, orderNumber, amountCents, district, updatedAt: now }).where(and(eq(reviews.id, id), eq(reviews.collectionId, access.collectionId)));
+    if (tagIds) await writePersonalLabels(id, access.user.id, status, tagIds);
     return Response.json({ id });
   } catch (error) {
     return serverError(error);

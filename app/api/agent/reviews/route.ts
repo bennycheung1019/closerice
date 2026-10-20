@@ -3,6 +3,7 @@ import { reviewOpinions, reviews } from "../../../../db/schema";
 import { errorResponse, reviewCreateInput, serverError } from "../../../../lib/reviews";
 import { getCollectionAccess } from "../../../../lib/auth";
 import { env } from "cloudflare:workers";
+import { writePersonalLabels } from "../../../../lib/personal-labels";
 
 export async function POST(request: Request) {
   if (!(request.headers.get("content-type") ?? "").includes("application/json")) {
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     if (!access) return errorResponse("請先登入並選擇可編輯的群組。", 403);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const { comment, score, ...visit } = parsed.data;
+    const { comment, score, status, ...visit } = parsed.data;
     await getDb().batch([getDb().insert(reviews).values({
       id,
       ownerId: access.user.id,
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
       createdAt: now,
       updatedAt: now,
     }), getDb().insert(reviewOpinions).values({ id: crypto.randomUUID(), reviewId: id, authorId: access.user.id, comment, score, createdAt: now, updatedAt: now })]);
+    if (status !== "none") await writePersonalLabels(id, access.user.id, status, []);
     return Response.json({ id, url: env.PUBLIC_SITE_URL ?? new URL("/", request.url).toString() }, { status: 201 });
   } catch (error) {
     return serverError(error);

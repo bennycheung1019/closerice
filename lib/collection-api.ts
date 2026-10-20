@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { collections, invites, memberships, ownershipTransfers, photos, reviews, siteSettings, tags, users } from "../db/schema";
+import { collections, invites, memberships, ownershipTransfers, personalTags, photos, reviews, siteSettings, users } from "../db/schema";
 import { getCollectionAccess, getSessionUser, isSiteAdmin, newInviteToken, refreshSession, tokenHash } from "./auth";
 import { errorResponse, serverError } from "./reviews";
 
@@ -210,31 +210,32 @@ export async function handleCollectionApi(request: Request, path: string): Promi
 
 export async function handleTagsApi(request: Request, path: string): Promise<Response> {
   try {
-    const access = await getCollectionAccess(request, request.method !== "GET");
+    const access = await getCollectionAccess(request);
     if (!access) return errorResponse("請登入並選擇有權限的群組。", 403);
     const db = getDb();
     if (path === "/api/tags" && request.method === "GET") {
-      const rows = await db.select({ id: tags.id, name: tags.name, createdBy: tags.createdBy }).from(tags).where(eq(tags.collectionId, access.collectionId));
-      return Response.json({ tags: rows }, { headers: noStore });
+      const rows = await db.select({ id: personalTags.id, name: personalTags.name }).from(personalTags)
+        .where(and(eq(personalTags.collectionId, access.collectionId), eq(personalTags.userId, access.user.id)));
+      return Response.json({ tags: rows.map((row) => ({ ...row, createdBy: access.user.id })) }, { headers: noStore });
     }
     if (path === "/api/tags" && request.method === "POST") {
       const body = await request.json().catch(() => null) as { name?: unknown } | null;
       const name = typeof body?.name === "string" ? body.name.trim() : "";
       if (!name || name.length > 24) return errorResponse("標籤名稱需為 1 至 24 字。", 400);
-      const count = await db.select({ id: tags.id }).from(tags).where(eq(tags.collectionId, access.collectionId));
-      if (count.length >= 10) return errorResponse("每個群組最多可建立 10 個標籤。", 400);
+      const count = await db.select({ id: personalTags.id }).from(personalTags)
+        .where(and(eq(personalTags.collectionId, access.collectionId), eq(personalTags.userId, access.user.id)));
+      if (count.length >= 10) return errorResponse("你在每個群組最多可建立 10 個標籤。", 400);
       const id = crypto.randomUUID();
-      try { await db.insert(tags).values({ id, collectionId: access.collectionId, name, createdBy: access.user.id, createdAt: new Date().toISOString() }); }
+      try { await db.insert(personalTags).values({ id, collectionId: access.collectionId, userId: access.user.id, name, createdAt: new Date().toISOString() }); }
       catch { return errorResponse("這個標籤已存在。", 409); }
       return Response.json({ id, name }, { status: 201 });
     }
     const match = /^\/api\/tags\/([^/]+)$/.exec(path);
     if (match && request.method === "DELETE") {
-      const tag = await db.select({ id: tags.id, createdBy: tags.createdBy }).from(tags)
-        .where(and(eq(tags.id, match[1]), eq(tags.collectionId, access.collectionId))).get();
+      const tag = await db.select({ id: personalTags.id }).from(personalTags)
+        .where(and(eq(personalTags.id, match[1]), eq(personalTags.collectionId, access.collectionId), eq(personalTags.userId, access.user.id))).get();
       if (!tag) return errorResponse("找不到標籤。", 404);
-      if (access.role !== "owner" && tag.createdBy !== access.user.id) return errorResponse("只有標籤建立者或群組擁有人可以刪除。", 403);
-      await db.delete(tags).where(eq(tags.id, tag.id));
+      await db.delete(personalTags).where(eq(personalTags.id, tag.id));
       return Response.json({ ok: true });
     }
     return errorResponse("找不到頁面。", 404);
@@ -243,11 +244,12 @@ export async function handleTagsApi(request: Request, path: string): Promise<Res
   }
 }
 
-export async function validTagIds(collectionId: string, candidate: unknown): Promise<string[] | null> {
+export async function validTagIds(collectionId: string, userId: string, candidate: unknown): Promise<string[] | null> {
   if (candidate === undefined) return [];
   if (!Array.isArray(candidate) || candidate.length > 10 || candidate.some((id) => typeof id !== "string" || id.length > 80)) return null;
   const ids = [...new Set(candidate as string[])];
   if (!ids.length) return [];
-  const found = await getDb().select({ id: tags.id }).from(tags).where(and(eq(tags.collectionId, collectionId), inArray(tags.id, ids)));
+  const found = await getDb().select({ id: personalTags.id }).from(personalTags)
+    .where(and(eq(personalTags.collectionId, collectionId), eq(personalTags.userId, userId), inArray(personalTags.id, ids)));
   return found.length === ids.length ? ids : null;
 }

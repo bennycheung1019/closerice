@@ -1,9 +1,10 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { photos, reviewOpinions, reviewTags, reviews, users } from "../../../db/schema";
+import { personalReviewStatus, personalReviewTags, photos, reviewOpinions, reviews, users } from "../../../db/schema";
 import { errorResponse, reviewCreateInput, serverError } from "../../../lib/reviews";
 import { getCollectionAccess } from "../../../lib/auth";
 import { validTagIds } from "../../../lib/collection-api";
+import { writePersonalLabels } from "../../../lib/personal-labels";
 
 export async function GET(request: Request) {
   try {
@@ -16,8 +17,10 @@ export async function GET(request: Request) {
     const ids = rows.map((row) => row.id);
     const idBatches = Array.from({ length: Math.ceil(ids.length / 300) }, (_, index) => ids.slice(index * 300, (index + 1) * 300));
     const imageRows = (await Promise.all(idBatches.map((batch) => db.select({ id: photos.id, reviewId: photos.reviewId, originalName: photos.originalName }).from(photos).where(and(eq(photos.collectionId, access.collectionId), inArray(photos.reviewId, batch)))))).flat();
-    const tagRows = (await Promise.all(idBatches.map((batch) => db.select({ reviewId: reviewTags.reviewId, tagId: reviewTags.tagId }).from(reviewTags)
-      .where(inArray(reviewTags.reviewId, batch))))).flat();
+    const tagRows = (await Promise.all(idBatches.map((batch) => db.select({ reviewId: personalReviewTags.reviewId, tagId: personalReviewTags.tagId }).from(personalReviewTags)
+      .where(and(eq(personalReviewTags.userId, access.user.id), inArray(personalReviewTags.reviewId, batch)))))).flat();
+    const statusRows = (await Promise.all(idBatches.map((batch) => db.select({ reviewId: personalReviewStatus.reviewId, status: personalReviewStatus.status }).from(personalReviewStatus)
+      .where(and(eq(personalReviewStatus.userId, access.user.id), inArray(personalReviewStatus.reviewId, batch)))))).flat();
     const opinionRows = (await Promise.all(idBatches.map((batch) => db.select({ id: reviewOpinions.id, reviewId: reviewOpinions.reviewId,
       authorId: reviewOpinions.authorId, comment: reviewOpinions.comment, score: reviewOpinions.score,
       createdAt: reviewOpinions.createdAt, updatedAt: reviewOpinions.updatedAt,
@@ -26,6 +29,7 @@ export async function GET(request: Request) {
       .where(inArray(reviewOpinions.reviewId, batch))))).flat();
     return Response.json({ reviews: rows.map((row) => ({
       ...row,
+      status: statusRows.find((status) => status.reviewId === row.id)?.status ?? "none",
       opinions: opinionRows.filter((opinion) => opinion.reviewId === row.id),
       tagIds: tagRows.filter((tag) => tag.reviewId === row.id).map((tag) => tag.tagId),
       photos: imageRows.filter((photo) => photo.reviewId === row.id).map((photo) => ({
@@ -44,17 +48,17 @@ export async function POST(request: Request) {
   try {
     const access = await getCollectionAccess(request, true);
     if (!access) return errorResponse("你沒有新增食評的權限。", 403);
-    const tagIds = await validTagIds(access.collectionId, (body as { tagIds?: unknown })?.tagIds);
-    if (!tagIds) return errorResponse("請選擇這個群組的有效標籤（最多 10 個）。", 400);
+    const tagIds = await validTagIds(access.collectionId, access.user.id, (body as { tagIds?: unknown })?.tagIds);
+    if (!tagIds) return errorResponse("請選擇自己的有效標籤（最多 10 個）。", 400);
     const db = getDb();
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const { comment, score, ...visit } = parsed.data;
+    const { comment, score, status, ...visit } = parsed.data;
     await db.batch([
       db.insert(reviews).values({ id, ownerId: access.user.id, collectionId: access.collectionId, createdBy: access.user.id, ...visit, comment: "", score: null, createdAt: now, updatedAt: now }),
       db.insert(reviewOpinions).values({ id: crypto.randomUUID(), reviewId: id, authorId: access.user.id, comment, score, createdAt: now, updatedAt: now }),
     ]);
-    if (tagIds.length) await db.insert(reviewTags).values(tagIds.map((tagId) => ({ reviewId: id, tagId })));
+    if (status !== "none" || tagIds.length) await writePersonalLabels(id, access.user.id, status, tagIds);
     return Response.json({ id }, { status: 201 });
   } catch (error) {
     return serverError(error);

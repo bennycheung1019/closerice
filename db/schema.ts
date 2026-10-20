@@ -103,6 +103,26 @@ export const reviewTags = sqliteTable("review_tags", {
   tagId: text("tag_id").notNull().references(() => tags.id, { onDelete: "cascade" }),
 }, (table) => [primaryKey({ columns: [table.reviewId, table.tagId] }), index("idx_review_tags_tag").on(table.tagId)]);
 
+export const personalTags = sqliteTable("personal_tags", {
+  id: text("id").primaryKey(),
+  collectionId: text("collection_id").notNull().references(() => collections.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [uniqueIndex("idx_personal_tags_collection_user_name").on(table.collectionId, table.userId, table.name)]);
+
+export const personalReviewStatus = sqliteTable("personal_review_status", {
+  reviewId: text("review_id").notNull().references(() => reviews.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: text("status").notNull(),
+}, (table) => [primaryKey({ columns: [table.reviewId, table.userId] }), index("idx_personal_review_status_user").on(table.userId)]);
+
+export const personalReviewTags = sqliteTable("personal_review_tags", {
+  reviewId: text("review_id").notNull().references(() => reviews.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tagId: text("tag_id").notNull().references(() => personalTags.id, { onDelete: "cascade" }),
+}, (table) => [primaryKey({ columns: [table.reviewId, table.userId, table.tagId] }), index("idx_personal_review_tags_user").on(table.userId), index("idx_personal_review_tags_tag").on(table.tagId)]);
+
 export const scanUsage = sqliteTable("scan_usage", {
   key: text("key").primaryKey(),
   count: integer("count").notNull().default(0),
