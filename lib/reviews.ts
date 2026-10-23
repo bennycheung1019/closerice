@@ -8,7 +8,7 @@ export const reviewInput = z.object({
   restaurant: z.string().trim().min(1).max(120),
   food: z.string().trim().min(1).max(1000),
   comment: z.string().trim().max(3000).default(""),
-  score: z.number().int().min(1).max(5).nullable().default(null),
+  score: z.number().min(0.5).max(5).multipleOf(0.5).nullable().default(null),
   channel: z.enum(["keeta", "foodpanda", "takeaway", "dine_in"]),
   status: z.enum(["none", "favorite", "blacklist"]).default("none"),
   orderNumber: z.string().trim().max(80).default(""),
@@ -20,7 +20,7 @@ export const reviewCreateInput = reviewInput.extend({ district: districtInput, s
 
 export const opinionInput = z.object({
   comment: z.string().trim().max(3000).default(""),
-  score: z.number().int().min(1).max(5).nullable().default(null),
+  score: z.number().min(0.5).max(5).multipleOf(0.5).nullable().default(null),
   selectedFoods: z.array(z.string()).max(40).optional(),
 }).refine((value) => Boolean(value.comment) || value.score !== null);
 
