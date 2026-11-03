@@ -22,7 +22,7 @@ export function useRestaurantEnrichmentTools(adminVerified: boolean) {
     const tools: Tool[] = [
       {
         name: "list_pending_closerice_restaurants",
-        description: "管理員專用：分頁讀取有用餐紀錄、尚未完成或分店不確定的餐廳資料。略過成員手動確認的資料及最近7天已檢查的餐廳。不讀取私人評語、訂單或成員資料。回傳nextCursor供續查。空清單代表暫無工作。",
+        description: "管理員專用：分頁讀取有用餐紀錄、尚未有餐廳分店連結的餐廳。略過已排除、成員手動確認及最近7天已檢查的餐廳。優先核對OpenRice餐廳主頁連結；亦可保存使用者指定的Foodpanda後備網頁連結，平台獨立標示，不搜尋或補充地址、地圖或相片。不讀取私人評語、訂單或成員資料。回傳nextCursor供續查。空清單代表暫無工作。",
         inputSchema: { type: "object", properties: { cursor: string(80), limit: { type: "integer", minimum: 1, maximum: 50 } }, additionalProperties: false },
         annotations: { readOnlyHint: true },
         execute: async (input) => call(`/api/enrichment/restaurants?limit=${Math.max(1, Math.min(50, Number(input.limit) || 25))}&cursor=${encodeURIComponent(String(input.cursor ?? "").slice(0, 80))}`),
@@ -36,8 +36,8 @@ export function useRestaurantEnrichmentTools(adminVerified: boolean) {
       },
       {
         name: "update_closerice_restaurant_profile",
-        description: "只在用戶授權餐廳資料補充時使用。管理員專用：以剛讀取的expectedVersion儲存分店地址、地區及圖片來源。送出完整欄位保留原資料。不可猜測分店，不能覆寫成員手動資料或既有地址；409時停止並重新核對。地址必須附來源。相片只可使用確有授權的圖片參照，保留署名及授權依據；禁止抓取或複製Google Maps、Street View、OpenRice圖片。無可重用相片就留空並標示missing/link_only/restricted，不可編造。分店不確定用uncertain及reviewNotes。回傳實際儲存結果，失敗不能報稱成功。",
-        inputSchema: { type: "object", properties: { id: idSchema, expectedVersion: { type: "integer", minimum: 1 }, address: string(500), region: string(80), sourceUrl: string(2000), coverPhotoUrl: string(2000), coverSourceUrl: string(2000), coverAttribution: string(500), coverLicense: string(300), coverUsage: { type: "string", enum: ["missing", "owned", "licensed", "link_only", "restricted"] }, reviewState: { type: "string", enum: ["pending", "verified", "uncertain"] }, reviewNotes: string(1000) }, required: ["id", "expectedVersion", "address", "region", "sourceUrl", "coverPhotoUrl", "coverSourceUrl", "coverAttribution", "coverLicense", "coverUsage", "reviewState", "reviewNotes"], additionalProperties: false },
+        description: "只在用戶授權餐廳分店連結補充時使用。管理員專用：用剛讀取的expectedVersion儲存已核對的OpenRice餐廳主頁連結或使用者指定的Foodpanda後備餐廳網頁連結、確認狀態與備註。只接受無追蹤參數的餐廳主頁，不可猜測網址或分店。找不到確實分店就留空及標示uncertain。不得搜尋或寫入地址、地圖、相片。不能覆寫既有連結或成員手動資料；409時停止並核對。回傳實際儲存結果，失敗不可報成功。",
+        inputSchema: { type: "object", properties: { id: idSchema, expectedVersion: { type: "integer", minimum: 1 }, openriceUrl: string(2000), foodpandaUrl: string(2000), reviewState: { type: "string", enum: ["pending", "verified", "uncertain"] }, reviewNotes: string(1000) }, required: ["id", "expectedVersion", "openriceUrl", "foodpandaUrl", "reviewState", "reviewNotes"], additionalProperties: false },
         annotations: { readOnlyHint: false, destructiveHint: false },
         execute: async (input) => { const { id, ...body } = input; return call(`/api/enrichment/restaurants/${encodeURIComponent(String(id))}`, body); },
       },

@@ -7,6 +7,8 @@ workers_dev = false
 [vars]
 PUBLIC_SITE_URL = "https://bunbun.space/closerice/"
 GOOGLE_CLIENT_ID = "REPLACE_WITH_GOOGLE_WEB_CLIENT_ID"
+# Exact profile IDs to skip during enrichment; leave empty for a new deployment.
+RESTAURANT_ENRICHMENT_EXCLUDED_IDS = ""
 
 # Set GOOGLE_CLIENT_SECRET and INITIAL_OWNER_EMAIL with `wrangler secret put`.
 # Google OAuth redirect URI: https://bunbun.space/closerice/api/auth/google/callback

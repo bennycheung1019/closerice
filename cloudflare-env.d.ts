@@ -10,5 +10,6 @@ declare namespace Cloudflare {
     INITIAL_OWNER_EMAIL?: string;
     RESTAURANT_ENRICHMENT_TOKEN_HASH?: string;
     RESTAURANT_ENRICHMENT_COLLECTION_IDS?: string;
+    RESTAURANT_ENRICHMENT_EXCLUDED_IDS?: string;
   }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `restaurant_branches` ADD `openrice_url` text DEFAULT '' NOT NULL;

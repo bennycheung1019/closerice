@@ -1,0 +1,22 @@
+{
+  "purpose": "Actual square app icons identify ordinary restaurant web links; no custom app-launch scheme. Unmodified artwork, displayed at 32px in a 44px tap target.",
+  "checkedOn": "2026-11-03",
+  "assets": [
+    {
+      "file": "openrice-app-icon.jpg",
+      "provider": "OpenRice",
+      "appStoreId": "310663323",
+      "sourcePage": "https://apps.apple.com/hk/app/id310663323",
+      "metadataSource": "https://itunes.apple.com/lookup?id=310663323&country=hk",
+      "assetUrl": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/18/f3/66/18f366c0-4547-3ab2-f1f4-dcbc434ee159/AppIcon-0-0-1x_U007emarketing-0-6-0-85-220.png/512x512bb.jpg"
+    },
+    {
+      "file": "foodpanda-app-icon.jpg",
+      "provider": "Foodpanda",
+      "appStoreId": "758103884",
+      "sourcePage": "https://apps.apple.com/hk/app/id758103884",
+      "metadataSource": "https://itunes.apple.com/lookup?id=758103884&country=hk",
+      "assetUrl": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/8d/55/cc/8d55cc68-daf8-569c-0684-05158e5fb87a/AppIcon-0-0-1x_U007ephone-0-1-0-85-220.png/512x512bb.jpg"
+    }
+  ]
+}
