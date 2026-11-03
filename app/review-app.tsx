@@ -500,20 +500,22 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
   const editingOpinion = reviews.find((review) => review.id === opinionVisitId)?.opinions.find((opinion) => opinion.id === editingOpinionId);
   function clearFilters() { setDistrictFilter("all"); setChannelFilter("all"); setSelectedTagIds([]); }
 
-  return <main className="shell review-app">
-    <header className="topbar"><div className="brand"><img className="brand-logo" src={pageAsset("brand-logo.png?v=3")} alt="Closerice" /></div><div className="review-head-actions"><select className="header-group-select" aria-label="切換食評群組" title="切換食評群組" value={collection.id} onChange={(event) => onSelectCollection(event.target.value)}>{collections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><a className="settings-link" href="/closerice/settings/"><Settings size={17} aria-hidden="true" />設定</a></div></header>
-    <section className="intro"><div><p className="eyebrow">{collection.name} · 食評筆記</p><h1>一齊記低每一餐的味道。</h1><p>由外賣到堂食，下一次落單之前有得參考。</p></div>{collection.role !== "viewer" && <button className="button primary" onClick={startNew}>＋ 新增紀錄</button>}</section>
+  return <main className={`shell review-app${selectedGroup ? " restaurant-detail-view" : ""}`}>
+    {!selectedGroup && <><header className="topbar"><div className="brand"><img className="brand-logo" src={pageAsset("brand-logo.png?v=3")} alt="Closerice" /></div><div className="review-head-actions"><select className="header-group-select" aria-label="切換食評群組" title="切換食評群組" value={collection.id} onChange={(event) => onSelectCollection(event.target.value)}>{collections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><a className="settings-link" href="/closerice/settings/"><Settings size={17} aria-hidden="true" />設定</a></div></header>
+    <section className="intro"><div><p className="eyebrow">{collection.name} · 食評筆記</p><h1>一齊記低每一餐的味道。</h1><p>由外賣到堂食，下一次落單之前有得參考。</p></div>{collection.role !== "viewer" && <button className="button primary" onClick={startNew}>＋ 新增紀錄</button>}</section></>}
     {!selectedGroup && <section className="mobile-page-head" aria-label="目前頁面"><p className="eyebrow">{collection.name} · 食評筆記</p><h1>餐廳紀錄</h1><p>{loading ? "正在讀取…" : `${allRestaurantGroups.length} 間餐廳 · ${reviews.length} 筆食評`}</p></section>}
     {message && <div className="toast" role="status">{message}</div>}
     {error && !open && <div className="notice error" role="alert">{error}</div>}
     {selectedGroup ? <section className="restaurant-detail" aria-label={`${selectedGroup.visits[0].restaurant}的食評`}>
+      <button type="button" className="restaurant-back" onClick={() => { setSelectedRestaurant(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}><ArrowLeft size={20} aria-hidden="true" /> 返回餐廳列表</button>
       <div className="restaurant-detail-head">
-        <button type="button" className="restaurant-back" onClick={() => setSelectedRestaurant(null)}><ArrowLeft size={18} aria-hidden="true" /> 返回餐廳列表</button>
-        <h2>{selectedGroup.visits[0].restaurant}</h2>
-        <p>{selectedGroup.visits[0].district ? districtNames[selectedGroup.visits[0].district] : "未分類"} · {selectedGroup.visits.length} 次記錄 · 最近於 {selectedGroup.visits[0].diningDate}</p>
-        <p className="restaurant-average">{ratingSummary(selectedGroup.visits)}</p>
+        <p className="restaurant-detail-context">{collection.name} · {selectedGroup.visits[0].district ? districtNames[selectedGroup.visits[0].district] : "未分類"}</p>
+        <h1>{selectedGroup.visits[0].restaurant}</h1>
+        <div className="restaurant-summary-row"><p className="restaurant-average">{ratingSummary(selectedGroup.visits)}</p><p className="restaurant-visit-meta">{selectedGroup.visits.length} 次用餐 · 最近 {selectedGroup.visits[0].diningDate}</p></div>
+        <div className="restaurant-detail-actions">
         <RestaurantProfilePanel key={selectedGroup.key} profile={selectedGroup.visits[0].restaurantProfile ?? null} name={selectedGroup.visits[0].restaurant} district={selectedGroup.visits[0].district ? districtNames[selectedGroup.visits[0].district] : ""} collectionId={collection.id} canEdit={collection.role !== "viewer"} onSaved={async () => { await loadReviews(); setMessage("餐廳資料已更新。"); }} />
-        {collection.role !== "viewer" && <button type="button" className="button primary" onClick={() => startRepeat(selectedGroup.visits[0])}>＋ 再記一餐</button>}
+        {collection.role !== "viewer" && <button type="button" className="button primary restaurant-detail-repeat" onClick={() => startRepeat(selectedGroup.visits[0])}><Plus size={16} aria-hidden="true" />再記一餐</button>}
+        </div>
       </div>
       <h3 className="visit-heading">每次用餐</h3>
       <div className="list visit-list">{selectedGroup.visits.map((review) => {
@@ -532,8 +534,13 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
             const authorName = opinion.authorName?.trim() || (opinion.authorId ? "成員" : "舊紀錄");
             return <div className="opinion-item" key={opinion.id}>
               <AuthorAvatar name={authorName} pictureUrl={opinion.authorPictureUrl} />
-              <div className="opinion-content"><div className="opinion-head"><strong>{authorName}</strong><span className="score" aria-label={opinion.score === null ? "未評分" : `${opinion.score} 分（滿分 5 分）`}><RatingStars score={opinion.score} />{opinion.score !== null && <span className="rating-score-number">{opinion.score.toFixed(1)}</span>}</span></div>{opinion.selectedFoods && <p className="opinion-foods">食物：{opinion.selectedFoods.join("、")}</p>}{opinion.comment && <p className="comment">{opinion.comment}</p>}</div>
-              {collection.role !== "viewer" && opinion.authorId === user.id && <button type="button" className="opinion-edit-button" aria-label={`編輯 ${authorName} 的食評`} onClick={() => startOpinion(review, opinion)}><Pencil size={17} aria-hidden="true" /></button>}
+              <div className="opinion-content">
+                <div className="opinion-head"><strong>{authorName}</strong><span className="score" aria-label={opinion.score === null ? "未評分" : `${opinion.score} 分（滿分 5 分）`}><RatingStars score={opinion.score} />{opinion.score !== null && <span className="rating-score-number">{opinion.score.toFixed(1)}</span>}</span></div>
+                <div className="opinion-body">
+                  <div className="opinion-copy">{opinion.selectedFoods && <p className="opinion-foods">食物：{opinion.selectedFoods.join("、")}</p>}{opinion.comment && <p className="comment">{opinion.comment}</p>}</div>
+                  {collection.role !== "viewer" && opinion.authorId === user.id && <button type="button" className="opinion-edit-button" aria-label={`編輯 ${authorName} 的食評`} onClick={() => startOpinion(review, opinion)}><Pencil size={17} aria-hidden="true" /></button>}
+                </div>
+              </div>
             </div>;
           }) : <p className="opinion-empty">暫時未有評語。</p>}</div>
           {((collection.role !== "viewer" && !ownOpinion) || collection.role === "viewer") && <div className="card-bottom"><button type="button" className="button secondary add-opinion" onClick={() => startOpinion(review)}>{collection.role === "viewer" ? "編輯我的標記" : "＋ 加入我的食評"}</button></div>}

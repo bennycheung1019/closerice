@@ -1,25 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { googleMapsUrl, providerImagery, publicHttpsUrl, usableCover, type RestaurantProfile } from '../lib/restaurant-profile';
+import { openRiceRestaurantUrl, foodpandaRestaurantUrl, restaurantReference } from '../lib/restaurant-profile';
 import { restaurantDetailsInput } from '../lib/restaurant-profile-input';
 
-test('only public HTTPS references are accepted', () => {
-  for (const value of ['javascript:alert(1)', 'http://example.com/a', 'https://user:password@example.com/a', 'https://127.0.0.1/a', 'https://[::1]/a', 'https://a.internal/a']) assert.equal(publicHttpsUrl(value), false, value);
-  assert.equal(publicHttpsUrl('https://restaurant.example/photo.jpg'), true);
+test('OpenRice references are distinct exact restaurant pages, never tracking or image URLs', () => {
+  const link = 'https://www.openrice.com/en/hongkong/r-amico-1890-mong-kok-western-pizza-r445102';
+  assert.equal(openRiceRestaurantUrl(link), true);
+  assert.equal(openRiceRestaurantUrl(''), true);
+  for (const value of [link+'?tracking=1', link+'#photos', link+'/photos/all', 'javascript:alert(1)', 'https://user:password@www.openrice.com/en/hongkong/r-amico-1890-r445102', 'https://127.0.0.1/en/hongkong/r-amico-1890-r445102', 'https://openrice.com.evil.example/en/hongkong/r-fake-r1', 'https://static5.orstatic.com/photo.jpg', 'http://www.openrice.com/en/hongkong/r-fake-r1', 'https://www.openrice.com/zh/hongkong/restaurants']) {
+    assert.equal(openRiceRestaurantUrl(value), false, value);
+    assert.equal(restaurantDetailsInput.safeParse({ expectedVersion:1, openriceUrl:value }).success, false, value);
+  }
+  assert.equal(restaurantDetailsInput.parse({ expectedVersion:1, openriceUrl:link }).openriceUrl, link);
+  assert.equal(restaurantDetailsInput.parse({ expectedVersion:1 }).openriceUrl, undefined);
 });
-test('provider photos stay on their source websites', () => {
-  for (const value of ['https://lh3.googleusercontent.com/photo', 'https://maps.googleapis.com/photo', 'https://www.google.com./maps/', 'https://static5.orstatic.com/photo', 'https://www.openrice.com/restaurant']) assert.equal(providerImagery(value), true, value);
-  const profile = { coverPhotoUrl:'https://restaurant.example/cover.jpg', coverSourceUrl:'https://restaurant.example/photos', coverAttribution:'Photographer', coverLicense:'Permission from photographer', coverUsage:'licensed' } as RestaurantProfile;
-  assert.equal(usableCover(profile), true);
-  assert.equal(usableCover({ ...profile, coverUsage:'restricted' }), false);
-  assert.equal(usableCover({ ...profile, coverAttribution:'' }), false);
-  assert.equal(restaurantDetailsInput.safeParse({expectedVersion:1,...profile}).success, true);
-  assert.equal(restaurantDetailsInput.safeParse({expectedVersion:1,...profile,coverPhotoUrl:'https://static5.orstatic.com/photo'}).success, false);
+
+test('obsolete address and cover fields are rejected', () => {
+  for (const key of ['address','region','sourceUrl','coverPhotoUrl','coverSourceUrl','coverAttribution','coverLicense','coverUsage','keetaUrl']) assert.equal(restaurantDetailsInput.safeParse({expectedVersion:1,[key]:'obsolete'}).success,false,key);
 });
-test('Maps links encode names and addresses without a key', () => {
-  const url = new URL(googleMapsUrl('餐廳 & 分店', '旺角', '彌敦道 1 號'));
-  assert.equal(url.origin, 'https://www.google.com');
-  assert.equal(url.searchParams.get('api'), '1');
-  assert.equal(url.searchParams.get('query'), '餐廳 & 分店 彌敦道 1 號 香港');
-  assert.equal(url.searchParams.has('key'), false);
+
+test('Foodpanda fallback is clearly labeled and never treated as OpenRice', () => {
+  const foodpandaUrl = 'https://www.foodpanda.hk/zh/restaurant/pu6a/asia-star-chicken-rice-mong-kok-pu6a';
+  const openriceUrl = 'https://www.openrice.com/en/hongkong/r-amico-1890-mong-kok-western-pizza-r445102';
+  assert.equal(foodpandaRestaurantUrl(foodpandaUrl),true);
+  assert.equal(restaurantDetailsInput.parse({expectedVersion:1,foodpandaUrl}).foodpandaUrl,foodpandaUrl);
+  assert.equal(openRiceRestaurantUrl(foodpandaUrl),false);
+  assert.equal(foodpandaRestaurantUrl(openriceUrl),false);
+  assert.deepEqual(restaurantReference({openriceUrl:'',foodpandaUrl}),{url:foodpandaUrl,provider:'Foodpanda',label:'Foodpanda 餐廳網頁'});
+  assert.equal(restaurantReference({openriceUrl,foodpandaUrl})?.provider,'OpenRice');
+  assert.equal(restaurantReference({openriceUrl:'',foodpandaUrl:''}),null);
+  for (const url of [foodpandaUrl+'?tracking=1',foodpandaUrl+'#photos',foodpandaUrl+'/reviews',foodpandaUrl.replace('https:','http:'),foodpandaUrl.replace('www.foodpanda.hk','www.foodpanda.hk.evil.example')]) assert.equal(foodpandaRestaurantUrl(url),false,url);
 });
+

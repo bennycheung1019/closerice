@@ -1,0 +1,1 @@
+ALTER TABLE `restaurant_branches` ADD `foodpanda_url` text DEFAULT '' NOT NULL;
