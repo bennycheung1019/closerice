@@ -5,6 +5,7 @@ import { collectionFetch, responseJson } from "../lib/client-api";
 import { apiUrl, pageAsset } from "../lib/client-urls";
 import ReviewApp from "./review-app";
 import SettingsPage from "./settings-page";
+import { AppLoadingScreen } from "./loading-state";
 
 export type CollectionSummary = { id: string; name: string; role: "owner" | "editor" | "viewer" };
 export type CollectionTag = { id: string; name: string; color: string; createdBy: string };
@@ -43,9 +44,9 @@ export default function CollectionApp() {
     localStorage.setItem("closerice_collection_id", id);
   }
 
-  async function loadTags(collectionId: string) {
+  async function loadTags(collectionId: string, isCurrent = () => true) {
     const data = await responseJson<{ tags: CollectionTag[] }>(await collectionFetch("/api/tags", collectionId));
-    setTagData({ collectionId, tags: data.tags });
+    if (isCurrent()) setTagData({ collectionId, tags: data.tags });
   }
 
   useEffect(() => {
@@ -76,7 +77,13 @@ export default function CollectionApp() {
 
   useEffect(() => {
     if (!selectedId || settingsPage) return;
-    void Promise.resolve().then(() => loadTags(selectedId)).catch((cause) => setError(cause instanceof Error ? cause.message : "無法讀取標籤。"));
+    let cancelled = false;
+    void Promise.resolve().then(() => loadTags(selectedId, () => !cancelled)).catch((cause) => {
+      if (cancelled) return;
+      setTagData({ collectionId: selectedId, tags: [] });
+      setError(cause instanceof Error ? cause.message : "無法讀取標籤。");
+    });
+    return () => { cancelled = true; };
   }, [selectedId]);
 
   async function createTag(name: string, color: string): Promise<string> {
@@ -105,7 +112,7 @@ export default function CollectionApp() {
     setSession(null); setSelectedId(""); setTagData({ collectionId: "", tags: [] });
   }
 
-  if (loading) return <main className="shell account-page"><p role="status">正在載入 Closerice…</p></main>;
+  if (loading) return <AppLoadingScreen />;
   if (!session) return <main className="shell account-page"><div className="login-card"><div className="brand"><img className="brand-logo" src={pageAsset("brand-logo.png?v=3")} alt="Closerice" /></div><h1>一齊記低每一餐。</h1><p>Closerice 是與家人、朋友和同事分享食評的筆記。建立不同群組，記錄餐廳、食物、評分和相片，並由群組擁有人決定誰可以查看或編輯。</p><a className="button primary" href={apiUrl("/api/auth/google/start")}>使用 Google 登入</a>{typeof window !== "undefined" && sessionStorage.getItem("closerice_invite") && <p className="hint">登入後會自動加入受邀群組。</p>}{error && <p className="notice error" role="alert">{error}</p>}<nav className="legal-links" aria-label="網站資料"><a href="/closerice/privacy.html">私隱政策</a><a href="/closerice/terms.html">使用條款</a></nav></div></main>;
 
   const collection = session.collections.find((item) => item.id === selectedId);
@@ -113,6 +120,6 @@ export default function CollectionApp() {
 
   return <>
     {error && <div className="global-notice notice error" role="alert">{error}<button className="icon-button" onClick={() => setError("")} aria-label="關閉">×</button></div>}
-    {collection ? <ReviewApp key={collection.id} collection={collection} collections={session.collections} onSelectCollection={selectCollection} user={session.user} tags={tagData.collectionId === selectedId ? tagData.tags : []} onCreateTag={createTag} onUpdateTag={updateTag} onDeleteTag={deleteTag} /> : <main className="shell account-page"><div className="login-card"><h1>建立第一個食評群組</h1><p>建立後便可邀請家人或同事一起記錄。</p><a className="button primary" href="/closerice/settings/">前往設定</a></div></main>}
+    {collection ? <ReviewApp key={collection.id} collection={collection} collections={session.collections} onSelectCollection={selectCollection} user={session.user} labelsLoading={tagData.collectionId !== selectedId} tags={tagData.collectionId === selectedId ? tagData.tags : []} onCreateTag={createTag} onUpdateTag={updateTag} onDeleteTag={deleteTag} /> : <main className="shell account-page"><div className="login-card"><h1>建立第一個食評群組</h1><p>建立後便可邀請家人或同事一起記錄。</p><a className="button primary" href="/closerice/settings/">前往設定</a></div></main>}
   </>;
 }

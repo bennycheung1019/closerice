@@ -6,6 +6,7 @@ import { collectionFetch, responseJson } from "../lib/client-api";
 import type { CollectionSummary } from "./collection-app";
 
 import HomeScreenTip from "./home-screen-tip";
+import { MemberRowsSkeleton } from "./loading-state";
 
 type Member = { id: string; email: string; name: string; pictureUrl: string | null; role: "owner" | "editor" | "viewer" };
 type Members = { owner: Member | null; members: Member[]; invites: Array<{ id: string; email: string; role: "editor" | "viewer"; expiresAt: number }>; transfer: { toUserId: string; expiresAt: number } | null };
@@ -30,6 +31,7 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
 }) {
   const collection = collections.find((item) => item.id === selectedId);
   const [members, setMembers] = useState<Members | null>(null);
+  const [membersLoadError, setMembersLoadError] = useState(false);
   const [newName, setNewName] = useState("");
   const [renameName, setRenameName] = useState("");
   const [deleteName, setDeleteName] = useState("");
@@ -62,6 +64,7 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
   async function loadMembers(id: string) {
     const data = await responseJson<Members>(await collectionFetch(`/api/collections/${id}/members`, id));
     setMembers(data);
+    setMembersLoadError(false);
   }
 
   useEffect(() => {
@@ -80,6 +83,7 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
     void Promise.resolve().then(() => {
       if (cancelled) return;
       setMembers(null);
+      setMembersLoadError(false);
       setRenameName(collection?.name ?? "");
       setDeleteName("");
       setInviteLink("");
@@ -92,7 +96,7 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
       void collectionFetch(`/api/collections/${collection.id}/members`, collection.id)
         .then((response) => responseJson<Members>(response))
         .then((data) => { if (!cancelled) setMembers(data); })
-        .catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "無法讀取成員。"); });
+        .catch((cause) => { if (!cancelled) { setMembersLoadError(true); setError(cause instanceof Error ? cause.message : "無法讀取成員。"); } });
     }
     return () => { cancelled = true; };
   }, [collection?.id, collection?.role, collection?.name]);
@@ -194,7 +198,7 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
         {collection && <p className="settings-role">你的權限：{roleName}</p>}
       {collection?.role === "owner" && <div className="settings-members-section" role="region" aria-labelledby="settings-members">
         <div className="settings-card-head"><div><h3 id="settings-members">成員與權限</h3><p>{members ? `目前有 ${1 + members.members.length} 位成員` : "管理群組的分享權限。"}</p></div><button className="settings-head-button" onClick={() => openPanel("invite")}><Plus size={16} aria-hidden="true" />邀請</button></div>
-        {!members ? <p role="status">正在讀取成員…</p> : <div className="member-list">
+        {membersLoadError ? <p className="hint">未能讀取成員，請重新整理再試。</p> : !members ? <MemberRowsSkeleton /> : <div className="member-list">
           {members.owner && <div className="member-row"><MemberAvatar name={members.owner.name || members.owner.email} pictureUrl={members.owner.pictureUrl} /><span className="member-identity"><strong>{members.owner.name || members.owner.email}</strong><small>{members.owner.email}</small></span><span className="member-role">擁有人</span></div>}
           {members.members.map((member) => <div className="member-row" key={member.id}>
             <MemberAvatar name={member.name || member.email} pictureUrl={member.pictureUrl} />

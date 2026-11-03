@@ -6,6 +6,7 @@ import { collectionFetch, responseJson } from "../lib/client-api";
 import { apiUrl, pageAsset } from "../lib/client-urls";
 import { districtGroups } from "../lib/districts";
 import "./admin.css";
+import { AppLoadingScreen, InlineLoading } from "./loading-state";
 import { useRestaurantEnrichmentTools } from "./restaurant-enrichment-tools";
 
 type Section = "overview" | "users" | "collections" | "reviews" | "settings";
@@ -110,7 +111,7 @@ export default function AdminPage() {
   }
   function closeDetail() { setDetail(null); setError(""); setNotice(""); }
 
-  if (loading) return <main className="shell admin-loading"><p>正在載入管理後台…</p></main>;
+  if (loading) return <AppLoadingScreen />;
   if (authStatus !== "ok") return <main className="shell admin-locked"><div className="admin-card"><ShieldCheck size={34} /><h1>管理後台</h1><p>{error}</p><a className="button primary" href={authStatus === "login" ? apiUrl("/api/auth/google/start") : "/closerice/"}>{authStatus === "login" ? "使用 Google 登入" : "返回 Closerice"}</a></div></main>;
 
   return <main className="shell admin-page">
@@ -172,7 +173,7 @@ function GroupEditor({ id, busy, onClose, onChange }: {
     const ok = await onChange(task, message, close);
     if (ok && !close) await refresh();
   }
-  return <Panel title="管理食評群組" onClose={onClose}>{error && <SmallNotice danger>{error}</SmallNotice>}{!data ? <p>正在載入…</p> : <>
+  return <Panel title="管理食評群組" onClose={onClose}>{error && <SmallNotice danger>{error}</SmallNotice>}{!data ? <InlineLoading /> : <>
     <form className="admin-form" onSubmit={(event) => { event.preventDefault(); void act(() => write("/api/admin/collections/" + id, "PATCH", { name, ownerUserId: ownerId }), "群組已更新。"); }}><h3>群組資料</h3><label className="admin-field">群組名稱<input required maxLength={60} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="admin-field">擁有人<select value={ownerId} onChange={(event) => setOwnerId(event.target.value)}><option value={data.collection.owner_user_id ?? ""}>目前擁有人</option>{data.members.filter((member) => !member.disabledAt).map((member) => <option key={member.id} value={member.id}>{member.name} · {member.email}</option>)}</select></label><p className="admin-muted">更換擁有人後，原擁有人會變成可編輯成員。</p><button className="button primary" disabled={busy || (name === data.collection.name && ownerId === data.collection.owner_user_id)}>儲存群組</button></form>
     <section className="admin-subsection"><h3>成員與權限</h3>{data.members.map((member) => <div className="admin-member-row" key={member.id}><Avatar name={member.name} src={member.pictureUrl} /><div className="admin-member-name"><strong>{member.name}</strong><small>{member.email}</small></div><select aria-label={member.name + " 的權限"} value={member.role} disabled={busy} onChange={(event) => void act(() => write("/api/admin/collections/" + id + "/members/" + member.id, "PATCH", { role: event.target.value }), "成員權限已更新。")}><option value="editor">可編輯</option><option value="viewer">只可查看</option></select><button type="button" className="admin-text-danger" disabled={busy} onClick={() => { if (window.confirm("移除 " + member.name + " 的群組權限？")) void act(() => write("/api/admin/collections/" + id + "/members/" + member.id, "DELETE"), "成員已移除。"); }}>移除</button></div>)}<form className="admin-inline" onSubmit={(event) => { event.preventDefault(); void act(() => write("/api/admin/collections/" + id + "/members", "POST", { email: memberEmail, role: memberRole }), "成員已加入。").then(() => setMemberEmail("")); }}><input type="email" required value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="現有用戶的 Google 電郵" /><select aria-label="新成員權限" value={memberRole} onChange={(event) => setMemberRole(event.target.value as "editor" | "viewer")}><option value="editor">可編輯</option><option value="viewer">只可查看</option></select><button className="button secondary" disabled={busy}>加入</button></form></section>
     <section className="admin-subsection"><h3>邀請</h3>{data.invites.map((invite) => <div className="admin-simple-row" key={invite.id}><span>{invite.email} · {roleNames[invite.role]}</span><button type="button" className="admin-text-danger" disabled={busy} onClick={() => void act(() => write("/api/admin/collections/" + id + "/invites/" + invite.id, "DELETE"), "邀請已撤銷。")}>撤銷</button></div>)}<form className="admin-inline" onSubmit={(event) => { event.preventDefault(); void write<{ link: string }>("/api/admin/collections/" + id + "/invites", "POST", { email: inviteEmail, role: inviteRole }).then((result) => { setInviteLink(result.link); setInviteEmail(""); void refresh(); }).catch((cause) => setError(cause instanceof Error ? cause.message : "建立邀請失敗。")); }}><input type="email" required value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="受邀人的 Google 電郵" /><select aria-label="邀請權限" value={inviteRole} onChange={(event) => setInviteRole(event.target.value as "editor" | "viewer")}><option value="editor">可編輯</option><option value="viewer">只可查看</option></select><button className="button secondary" disabled={busy}>產生連結</button></form>{inviteLink && <label className="admin-field">邀請連結<input readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label>}</section>
@@ -201,7 +202,7 @@ function ReviewEditor({ id, busy, onClose, onChange }: {
   function update<K extends keyof ReviewDetail["review"]>(key: K, value: ReviewDetail["review"][K]) {
     if (form) setForm({ ...form, [key]: value });
   }
-  return <Panel title="管理用餐紀錄" onClose={onClose}>{error && <SmallNotice danger>{error}</SmallNotice>}{!data || !form ? <p>正在載入…</p> : <>
+  return <Panel title="管理用餐紀錄" onClose={onClose}>{error && <SmallNotice danger>{error}</SmallNotice>}{!data || !form ? <InlineLoading /> : <>
     <form className="admin-form" onSubmit={(event) => { event.preventDefault(); void act(() => write("/api/admin/reviews/" + id, "PATCH", {
       diningDate: form.diningDate, restaurant: form.restaurant, food: form.food, channel: form.channel,
       orderNumber: form.orderNumber, amountCents: form.amountCents, district: form.district,

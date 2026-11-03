@@ -9,6 +9,7 @@ import { normalizedRestaurantName, restaurantNameSimilarity } from "../lib/resta
 import { splitFoodItems } from "../lib/food-items";
 import { defaultTagColor, tagColors, tagStyle } from "../lib/tag-colors";
 import LocationPicker from "./location-picker";
+import { ReviewCardsSkeleton } from "./loading-state";
 import RestaurantProfilePanel from "./restaurant-profile-panel";
 import type { RestaurantProfile } from "../lib/restaurant-profile";
 import type { CollectionSummary, CollectionTag } from "./collection-app";
@@ -113,12 +114,13 @@ async function compressFoodPhoto(file: File): Promise<Blob> {
   }
 }
 
-export default function ReviewApp({ collection, collections, onSelectCollection, user, tags, onCreateTag, onUpdateTag, onDeleteTag }: {
+export default function ReviewApp({ collection, collections, onSelectCollection, user, tags, labelsLoading, onCreateTag, onUpdateTag, onDeleteTag }: {
   collection: CollectionSummary;
   collections: CollectionSummary[];
   onSelectCollection: (id: string) => void;
   user: { id: string; email: string; name: string };
   tags: CollectionTag[];
+  labelsLoading: boolean;
   onCreateTag: (name: string, color: string) => Promise<string>;
   onUpdateTag: (id: string, name: string, color: string) => Promise<void>;
   onDeleteTag: (id: string) => Promise<void>;
@@ -496,6 +498,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
     finally { setTagBusy(false); }
   }
 
+  const contentLoading = loading || labelsLoading;
   const activeFilterCount = Number(districtFilter !== "all") + Number(channelFilter !== "all") + activeTagIds.length;
   const editingOpinion = reviews.find((review) => review.id === opinionVisitId)?.opinions.find((opinion) => opinion.id === editingOpinionId);
   function clearFilters() { setDistrictFilter("all"); setChannelFilter("all"); setSelectedTagIds([]); }
@@ -503,7 +506,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
   return <main className={`shell review-app${selectedGroup ? " restaurant-detail-view" : ""}`}>
     {!selectedGroup && <><header className="topbar"><div className="brand"><img className="brand-logo" src={pageAsset("brand-logo.png?v=3")} alt="Closerice" /></div><div className="review-head-actions"><select className="header-group-select" aria-label="切換食評群組" title="切換食評群組" value={collection.id} onChange={(event) => onSelectCollection(event.target.value)}>{collections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><a className="settings-link" href="/closerice/settings/"><Settings size={17} aria-hidden="true" />設定</a></div></header>
     <section className="intro"><div><p className="eyebrow">{collection.name} · 食評筆記</p><h1>一齊記低每一餐的味道。</h1><p>由外賣到堂食，下一次落單之前有得參考。</p></div>{collection.role !== "viewer" && <button className="button primary" onClick={startNew}>＋ 新增紀錄</button>}</section></>}
-    {!selectedGroup && <section className="mobile-page-head" aria-label="目前頁面"><p className="eyebrow">{collection.name} · 食評筆記</p><h1>餐廳紀錄</h1><p>{loading ? "正在讀取…" : `${allRestaurantGroups.length} 間餐廳 · ${reviews.length} 筆食評`}</p></section>}
+    {!selectedGroup && <section className="mobile-page-head" aria-label="目前頁面"><p className="eyebrow">{collection.name} · 食評筆記</p><h1>餐廳紀錄</h1><p>{contentLoading ? <span className="skeleton-block skeleton-count" aria-hidden="true" /> : `${allRestaurantGroups.length} 間餐廳 · ${reviews.length} 筆食評`}</p></section>}
     {message && <div className="toast" role="status">{message}</div>}
     {error && !open && <div className="notice error" role="alert">{error}</div>}
     {selectedGroup ? <section className="restaurant-detail" aria-label={`${selectedGroup.visits[0].restaurant}的食評`}>
@@ -548,7 +551,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
       })}</div>
     </section> : <>
       <div className="toolbar compact-toolbar"><input className="search" aria-label="搜尋餐廳或食物" placeholder="搜尋餐廳、食物或評語" value={search} onChange={(event) => setSearch(event.target.value)} /><button className="filter-trigger" type="button" onClick={() => setFiltersOpen(true)}><SlidersHorizontal size={18} aria-hidden="true" />篩選{activeFilterCount > 0 && <span className="filter-count">{activeFilterCount}</span>}</button></div>
-      {loading ? <p role="status">正在讀取紀錄…</p> : reviews.length === 0 ? <section className="empty"><div className="empty-copy"><h2>第一餐，從這裏開始。</h2><p>新增一筆食評。餐廳、食物和分數都會儲存；食物相片只在你選擇上載時才會附上。</p>{collection.role !== "viewer" && <button className="button primary" onClick={startNew}>新增第一筆紀錄</button>}</div><img src={pageAsset("food-hero.png")} alt="一盒叉燒飯和青菜" /></section> : restaurantGroups.length === 0 ? <section className="no-results"><Heart size={26} aria-hidden="true" /><h2>找不到餐廳</h2><p>試試其他搜尋字眼或篩選條件。</p></section>  : <section className="list restaurant-list" aria-label="餐廳列表">{restaurantGroups.map((group) => {
+      {contentLoading ? <ReviewCardsSkeleton /> : error && reviews.length === 0 ? <section className="no-results"><h2>暫時無法載入食評</h2><button type="button" className="button secondary" onClick={() => { setLoading(true); void loadReviews(); }}>重新載入</button></section> : reviews.length === 0 ? <section className="empty"><div className="empty-copy"><h2>第一餐，從這裏開始。</h2><p>新增一筆食評。餐廳、食物和分數都會儲存；食物相片只在你選擇上載時才會附上。</p>{collection.role !== "viewer" && <button className="button primary" onClick={startNew}>新增第一筆紀錄</button>}</div><img src={pageAsset("food-hero.png")} alt="一盒叉燒飯和青菜" /></section> : restaurantGroups.length === 0 ? <section className="no-results"><Heart size={26} aria-hidden="true" /><h2>找不到餐廳</h2><p>試試其他搜尋字眼或篩選條件。</p></section>  : <section className="list restaurant-list" aria-label="餐廳列表">{restaurantGroups.map((group) => {
         const latest = group.visits[0];
         const allVisits = group.visits;
         const groupTagIds = new Set(allVisits.flatMap((visit) => visit.tagIds));
