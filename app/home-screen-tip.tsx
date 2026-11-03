@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Share, Smartphone } from "lucide-react";
+import { ChevronDown, Share, Smartphone } from "lucide-react";
 
 type Platform = "iphone" | "android";
 
@@ -18,8 +18,9 @@ export default function HomeScreenTip() {
   }, []);
 
   const platform = detected ?? selected;
-  return <section className="settings-card home-screen-tip" aria-labelledby="home-screen-tip-title">
-    <div className="home-screen-tip-heading"><span className="home-screen-tip-icon"><Smartphone size={21} aria-hidden="true" /></span><div><h2 id="home-screen-tip-title">加入手機主畫面</h2><p>下次點一下圖示，就能打開 Closerice。</p></div></div>
+  return <details className="settings-card home-screen-tip">
+    <summary className="home-screen-tip-heading"><span className="home-screen-tip-icon"><Smartphone size={21} aria-hidden="true" /></span><span className="home-screen-tip-title">加入手機主畫面</span><ChevronDown className="home-screen-tip-chevron" size={19} aria-hidden="true" /></summary>
+    <div className="home-screen-tip-content">
     {!detected && <div className="home-screen-platforms" role="tablist" aria-label="選擇手機系統">
       {(["iphone", "android"] as const).map((item) => <button key={item} id={`home-screen-tab-${item}`} type="button" role="tab" aria-selected={selected === item} aria-controls="home-screen-instructions" tabIndex={selected === item ? 0 : -1} onClick={() => setSelected(item)} onKeyDown={(event) => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -40,8 +41,7 @@ export default function HomeScreenTip() {
         <li>點右上角「⋮」，選「加到主畫面」或「安裝並建立捷徑」。</li>
         <li>按畫面選擇「安裝」或「建立捷徑」，再確認加入。</li>
       </ol>}
-      <p className="home-screen-browser-note">若在聊天 App 內開啟，請先改用{platform === "iphone" ? " Safari" : " Chrome"}。</p>
-      <a className="home-screen-help" href={platform === "iphone" ? "https://support.apple.com/zh-hk/guide/iphone/iphea86e5236/ios" : "https://support.google.com/chrome/answer/15085120?co=GENIE.Platform%3DAndroid&hl=zh-Hant"} target="_blank" rel="noopener noreferrer">{platform === "iphone" ? "Apple" : "Google"} 官方說明 ↗</a>
     </div>
-  </section>;
+    </div>
+  </details>;
 }
