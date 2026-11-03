@@ -7,6 +7,7 @@ import { writePersonalLabels } from "../../../../lib/personal-labels";
 import { and, eq } from "drizzle-orm";
 import { personalTags } from "../../../../db/schema";
 import { ensureDefaultPersonalTags } from "../../../../lib/collection-api";
+import { ensureRestaurantBranch } from "../../../../lib/restaurant-api";
 import { selectedFoodsForOrder } from "../../../../lib/food-items";
 
 export async function POST(request: Request) {
@@ -38,12 +39,14 @@ export async function POST(request: Request) {
     const { comment, score, status, selectedFoods: requestedFoods, ...visit } = parsed.data;
     const selectedFoods = selectedFoodsForOrder(visit.food, requestedFoods);
     if (selectedFoods === undefined) return errorResponse("請從訂單食物中選擇至少一款。", 400);
+    const restaurantId = await ensureRestaurantBranch(access.collectionId, visit.restaurant, visit.district);
     await getDb().batch([getDb().insert(reviews).values({
       id,
       ownerId: access.user.id,
       collectionId: access.collectionId,
       createdBy: access.user.id,
       ...visit,
+      restaurantId,
       comment: "",
       score: null,
       createdAt: now,

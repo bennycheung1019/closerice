@@ -2,6 +2,8 @@ import { env } from "cloudflare:workers";
 import { getSessionUser, isSiteAdmin, newInviteToken, tokenHash } from "./auth";
 import { errorResponse, opinionInput, reviewInput, serverError } from "./reviews";
 
+import { ensureRestaurantBranch } from "./restaurant-api";
+
 type Admin = { id: string; email: string };
 type Row = Record<string, unknown>;
 const store = { "Cache-Control": "private, no-store" };
@@ -313,9 +315,10 @@ export async function handleAdminApi(request: Request, path: string): Promise<Re
         const parsed = reviewInput.safeParse(body);
         if (!parsed.success) return errorResponse("請檢查用餐資料。", 400);
         const data = parsed.data;
+        const restaurantId = typeof current.collectionId === "string" ? await ensureRestaurantBranch(current.collectionId, data.restaurant, data.district) : null;
         const operations = [
-          db.prepare("UPDATE reviews SET dining_date=?,restaurant=?,food=?,channel=?,order_number=?,amount_cents=?,district=?,updated_at=? WHERE id=?")
-            .bind(data.diningDate, data.restaurant, data.food, data.channel, data.orderNumber, data.amountCents, data.district, new Date().toISOString(), id),
+          db.prepare("UPDATE reviews SET restaurant_id=?,dining_date=?,restaurant=?,food=?,channel=?,order_number=?,amount_cents=?,district=?,updated_at=? WHERE id=?")
+            .bind(restaurantId, data.diningDate, data.restaurant, data.food, data.channel, data.orderNumber, data.amountCents, data.district, new Date().toISOString(), id),
         ];
         operations.push(audit(admin, "review.update", "review", id, current, data));
         await db.batch(operations);

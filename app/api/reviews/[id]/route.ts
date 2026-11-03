@@ -7,6 +7,8 @@ import { getCollectionAccess } from "../../../../lib/auth";
 import { validTagIds } from "../../../../lib/collection-api";
 import { writePersonalLabels } from "../../../../lib/personal-labels";
 
+import { ensureRestaurantBranch } from "../../../../lib/restaurant-api";
+
 type Context = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, context: Context) {
@@ -26,7 +28,8 @@ export async function PATCH(request: Request, context: Context) {
     if (row.createdBy !== access.user.id) return errorResponse("只有建立這次用餐的成員可以修改用餐資料。", 403);
     const { diningDate, restaurant, food, channel, status, orderNumber, amountCents, district } = parsed.data;
     const now = new Date().toISOString();
-    await db.update(reviews).set({ diningDate, restaurant, food, channel, orderNumber, amountCents, district, updatedAt: now }).where(and(eq(reviews.id, id), eq(reviews.collectionId, access.collectionId)));
+    const restaurantId = await ensureRestaurantBranch(access.collectionId, restaurant, district);
+    await db.update(reviews).set({ diningDate, restaurant, restaurantId, food, channel, orderNumber, amountCents, district, updatedAt: now }).where(and(eq(reviews.id, id), eq(reviews.collectionId, access.collectionId)));
     if (tagIds) await writePersonalLabels(id, access.user.id, status, tagIds);
     return Response.json({ id });
   } catch (error) {

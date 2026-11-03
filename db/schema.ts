@@ -49,6 +49,28 @@ export const ownershipTransfers = sqliteTable("ownership_transfers", {
   expiresAt: integer("expires_at").notNull(),
 });
 
+export const restaurantBranches = sqliteTable("restaurant_branches", {
+  id: text("id").primaryKey(),
+  collectionId: text("collection_id").notNull().references(() => collections.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  district: text("district").notNull().default(""),
+  region: text("region").notNull().default("香港"),
+  address: text("address").notNull().default(""),
+  sourceUrl: text("source_url").notNull().default(""),
+  coverPhotoUrl: text("cover_photo_url").notNull().default(""),
+  coverSourceUrl: text("cover_source_url").notNull().default(""),
+  coverAttribution: text("cover_attribution").notNull().default(""),
+  coverLicense: text("cover_license").notNull().default(""),
+  coverUsage: text("cover_usage").notNull().default("missing"),
+  reviewState: text("review_state").notNull().default("pending"),
+  reviewNotes: text("review_notes").notNull().default(""),
+  checkedAt: text("checked_at"),
+  manualLock: integer("manual_lock", { mode: "boolean" }).notNull().default(false),
+  version: integer("version").notNull().default(1),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [uniqueIndex("idx_restaurant_branches_identity").on(table.collectionId, table.name, table.district), index("idx_restaurant_branches_pending").on(table.reviewState, table.checkedAt)]);
+
 export const reviews = sqliteTable("reviews", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull(),
@@ -56,6 +78,7 @@ export const reviews = sqliteTable("reviews", {
   createdBy: text("created_by").references(() => users.id),
   diningDate: text("dining_date").notNull(),
   restaurant: text("restaurant").notNull(),
+  restaurantId: text("restaurant_id").references(() => restaurantBranches.id),
   food: text("food").notNull(),
   comment: text("comment").notNull().default(""),
   score: integer("score"),
