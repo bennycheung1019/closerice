@@ -1,11 +1,17 @@
 .app-loading-screen{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:#faf9f5}
-.loading-animation{position:relative;display:block;width:92px;height:92px;flex:none;border-radius:28px;background:#edf3de}
-.loading-bowl{position:absolute;left:23px;bottom:23px;width:46px;height:25px;border-radius:4px 4px 24px 24px;background:#274a34}
-.loading-bowl:before{content:"";position:absolute;inset:-3px 0 auto;height:7px;border:2px solid #274a34;border-radius:50%;background:#d7f264;box-sizing:border-box}
-.loading-bowl:after{content:"";position:absolute;bottom:-4px;left:15px;width:16px;height:5px;border-radius:0 0 4px 4px;background:#274a34}
-.loading-steam{position:absolute;left:31px;top:19px;width:3px;height:13px;border-radius:3px;background:#274a34;animation:loading-steam-rise 1.4s ease-in-out infinite}
-.loading-steam:nth-child(2){left:44px;animation-delay:-.9s}.loading-steam:nth-child(3){left:57px;animation-delay:-.45s}
-@keyframes loading-steam-rise{0%{opacity:0;transform:translateY(5px)}45%{opacity:.65}100%{opacity:0;transform:translateY(-7px)}}
+.loading-animation{display:block;width:144px;height:144px;flex:none}
+.loading-logo{display:block;width:100%;height:100%;overflow:visible}
+.loading-chopstick-left{transform-box:view-box;transform-origin:333px 217px;animation:loading-chopstick-left 3.8s ease-in-out infinite}
+.loading-chopstick-right{transform-box:view-box;transform-origin:354px 231px;animation:loading-chopstick-right 3.8s ease-in-out infinite}
+.loading-eyes{transform-box:fill-box;transform-origin:center;animation:loading-blink 3.8s ease-in-out infinite}
+.loading-smile{animation:loading-smile 3.8s ease-in-out infinite}
+.loading-happy-mouth{opacity:0;animation:loading-happy-mouth 3.8s ease-in-out infinite}
+.loading-chopstick-left,.loading-chopstick-right,.loading-eyes,.loading-smile,.loading-happy-mouth{animation-delay:-1s}
+@keyframes loading-chopstick-left{0%,18%,56%,100%{transform:rotate(0)}30%{transform:rotate(-3deg)}42%{transform:rotate(1.5deg)}}
+@keyframes loading-chopstick-right{0%,18%,56%,100%{transform:rotate(0)}30%{transform:rotate(3deg)}42%{transform:rotate(-1.5deg)}}
+@keyframes loading-blink{0%,29%,38%,100%{transform:scaleY(1)}33%,35%{transform:scaleY(.08)}}
+@keyframes loading-smile{0%,43%,76%,100%{opacity:1}50%,67%{opacity:0}}
+@keyframes loading-happy-mouth{0%,43%,76%,100%{opacity:0}50%,67%{opacity:1}}
 .inline-loading{display:grid;place-items:center;min-height:130px}.inline-loading .loading-animation{transform:scale(.75)}
 .skeleton-block{display:block;max-width:100%;height:14px;border-radius:7px;background:#ecefe5;animation:skeleton-breathe 1.6s ease-in-out infinite alternate}
 @keyframes skeleton-breathe{from{opacity:.55}to{opacity:1}}
@@ -15,4 +21,4 @@
 .skeleton-footer{display:flex;justify-content:space-between;gap:20px;margin-top:auto;padding-top:15px;border-top:1px solid #e8e8df}.skeleton-footer .skeleton-block{width:106px;height:13px}
 .skeleton-count{display:inline-block;width:150px;height:14px;vertical-align:middle}
 .member-rows-skeleton{border-top:1px solid #e8e8df}.skeleton-member{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid #e8e8df}.skeleton-member>.skeleton-avatar{width:40px;height:40px}.skeleton-member>div{flex:1;min-width:0}.skeleton-member .skeleton-title{width:100px;height:14px;margin-bottom:9px}.skeleton-member .skeleton-meta{width:165px;height:11px}
-@media(prefers-reduced-motion:reduce){.loading-steam,.skeleton-block{animation:none}.loading-steam{opacity:.55}}
+@media(prefers-reduced-motion:reduce){.loading-chopstick-left,.loading-chopstick-right,.loading-eyes,.loading-smile,.loading-happy-mouth,.skeleton-block{animation:none}.loading-smile{opacity:1}.loading-happy-mouth{opacity:0}}
