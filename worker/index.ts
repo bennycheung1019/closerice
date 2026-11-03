@@ -10,14 +10,18 @@ import { POST as scanReceipt } from "../app/api/scan/route";
 import { finishGoogleLogin, logout, startGoogleLogin } from "../lib/auth";
 import { handleCollectionApi, handleTagsApi } from "../lib/collection-api";
 import { handleAdminApi } from "../lib/admin-api";
+import { handleRestaurantApi } from "../lib/restaurant-api";
 
 async function api(request: Request, path: string): Promise<Response> {
+  // Dedicated enrichment auth checks token scope or admin session + CSRF before any operation.
+  if (path.startsWith("/api/enrichment/")) return handleRestaurantApi(request, path);
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && request.headers.get("Origin") !== "https://bunbun.space") {
     return Response.json({ error: "請從 Closerice 網站提交請求。" }, { status: 403 });
   }
   if (path === "/api/auth/google/start" && request.method === "GET") return startGoogleLogin();
   if (path === "/api/auth/google/callback" && request.method === "GET") return finishGoogleLogin(request);
   if (path === "/api/auth/logout" && request.method === "POST") return logout(request);
+  if (path.startsWith("/api/restaurants/")) return handleRestaurantApi(request, path);
   if (path.startsWith("/api/admin/")) return handleAdminApi(request, path);
   if (path === "/api/me" || path === "/api/collections" || path.startsWith("/api/collections/") || path === "/api/invites/accept") return handleCollectionApi(request, path);
   if (path === "/api/tags" || path.startsWith("/api/tags/")) return handleTagsApi(request, path);

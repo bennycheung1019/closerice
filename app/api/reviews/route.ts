@@ -1,10 +1,11 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { personalReviewTags, photos, reviewOpinions, reviews, users } from "../../../db/schema";
+import { personalReviewTags, photos, reviewOpinions, reviews, users, restaurantBranches } from "../../../db/schema";
 import { errorResponse, reviewCreateInput, serverError } from "../../../lib/reviews";
 import { getCollectionAccess } from "../../../lib/auth";
 import { validTagIds } from "../../../lib/collection-api";
 import { writePersonalLabels } from "../../../lib/personal-labels";
+import { ensureRestaurantBranch } from "../../../lib/restaurant-api";
 import { selectedFoodsForOrder } from "../../../lib/food-items";
 
 export async function GET(request: Request) {
@@ -15,6 +16,8 @@ export async function GET(request: Request) {
     const rows = await db.select().from(reviews)
       .where(eq(reviews.collectionId, access.collectionId))
       .orderBy(desc(reviews.diningDate), desc(reviews.createdAt));
+    const branches = await db.select().from(restaurantBranches).where(eq(restaurantBranches.collectionId, access.collectionId));
+    const branchMap = new Map(branches.map((branch) => [branch.id, branch]));
     const ids = rows.map((row) => row.id);
     const idBatches = Array.from({ length: Math.ceil(ids.length / 300) }, (_, index) => ids.slice(index * 300, (index + 1) * 300));
     const imageRows = (await Promise.all(idBatches.map((batch) => db.select({ id: photos.id, reviewId: photos.reviewId, originalName: photos.originalName }).from(photos).where(and(eq(photos.collectionId, access.collectionId), inArray(photos.reviewId, batch)))))).flat();
@@ -28,6 +31,7 @@ export async function GET(request: Request) {
       .where(inArray(reviewOpinions.reviewId, batch))))).flat();
     return Response.json({ reviews: rows.map((row) => ({
       ...row,
+      restaurantProfile: row.restaurantId ? branchMap.get(row.restaurantId) ?? null : null,
       opinions: opinionRows.filter((opinion) => opinion.reviewId === row.id).map((opinion) => ({ ...opinion, selectedFoods: opinion.selectedFoods ? JSON.parse(opinion.selectedFoods) as string[] : null })),
       tagIds: tagRows.filter((tag) => tag.reviewId === row.id).map((tag) => tag.tagId),
       photos: imageRows.filter((photo) => photo.reviewId === row.id).map((photo) => ({
@@ -54,8 +58,9 @@ export async function POST(request: Request) {
     const { comment, score, status, selectedFoods: requestedFoods, ...visit } = parsed.data;
     const selectedFoods = selectedFoodsForOrder(visit.food, requestedFoods);
     if (selectedFoods === undefined) return errorResponse("請從訂單食物中選擇至少一款。", 400);
+    const restaurantId = await ensureRestaurantBranch(access.collectionId, visit.restaurant, visit.district);
     await db.batch([
-      db.insert(reviews).values({ id, ownerId: access.user.id, collectionId: access.collectionId, createdBy: access.user.id, ...visit, comment: "", score: null, createdAt: now, updatedAt: now }),
+      db.insert(reviews).values({ id, ownerId: access.user.id, collectionId: access.collectionId, createdBy: access.user.id, ...visit, restaurantId, comment: "", score: null, createdAt: now, updatedAt: now }),
       db.insert(reviewOpinions).values({ id: crypto.randomUUID(), reviewId: id, authorId: access.user.id, comment, score, selectedFoods: selectedFoods ? JSON.stringify(selectedFoods) : null, createdAt: now, updatedAt: now }),
     ]);
     if (status !== "none" || tagIds.length) await writePersonalLabels(id, access.user.id, status, tagIds);

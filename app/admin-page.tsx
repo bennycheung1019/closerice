@@ -6,6 +6,7 @@ import { collectionFetch, responseJson } from "../lib/client-api";
 import { apiUrl, pageAsset } from "../lib/client-urls";
 import { districtGroups } from "../lib/districts";
 import "./admin.css";
+import { useRestaurantEnrichmentTools } from "./restaurant-enrichment-tools";
 
 type Section = "overview" | "users" | "collections" | "reviews" | "settings";
 type Settings = { registrationEnabled: boolean; newGroupsEnabled: boolean };
@@ -23,6 +24,7 @@ const sections: Array<{ id: Section; label: string }> = [
 const channelNames: Record<string, string> = { keeta: "Keeta", foodpanda: "foodpanda", takeaway: "外賣自取", dine_in: "堂食" };
 const roleNames: Record<string, string> = { editor: "可編輯", viewer: "只可查看" };
 const actionNames: Record<string, string> = {
+  "restaurant.enrich": "補充餐廳資料", "restaurant.update": "更新餐廳資料",
   "user.update": "更新用戶", "user.sessions.revoke": "登出用戶", "collection.update": "更新群組", "collection.delete": "刪除群組",
   "membership.upsert": "加入成員", "membership.update": "更改權限", "membership.remove": "移除成員", "invite.create": "建立邀請",
   "invite.revoke": "撤銷邀請", "tag.create": "新增標籤", "tag.delete": "刪除標籤", "review.update": "更新紀錄",
@@ -56,6 +58,7 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  useRestaurantEnrichmentTools(Boolean(overview));
   const [authStatus, setAuthStatus] = useState<"ok" | "login" | "forbidden">("ok");
 
   const reload = useCallback(async (tab: Section, q = "", collectionId = "", offset = 0) => {

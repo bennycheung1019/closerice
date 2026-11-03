@@ -9,6 +9,8 @@ import { normalizedRestaurantName, restaurantNameSimilarity } from "../lib/resta
 import { splitFoodItems } from "../lib/food-items";
 import { defaultTagColor, tagColors, tagStyle } from "../lib/tag-colors";
 import LocationPicker from "./location-picker";
+import RestaurantProfilePanel from "./restaurant-profile-panel";
+import type { RestaurantProfile } from "../lib/restaurant-profile";
 import type { CollectionSummary, CollectionTag } from "./collection-app";
 
 type Channel = "keeta" | "foodpanda" | "takeaway" | "dine_in";
@@ -16,11 +18,12 @@ type Status = "none" | "favorite" | "blacklist";
 type Photo = { id: string; url: string; name: string };
 type Opinion = { id: string; reviewId: string; authorId: string | null; authorName: string | null; authorPictureUrl: string | null; comment: string; score: number | null; selectedFoods: string[] | null; createdAt: string; updatedAt: string };
 type Review = {
+  restaurantId?: string | null; restaurantProfile?: RestaurantProfile | null;
   id: string; diningDate: string; restaurant: string; food: string; comment: string;
   score: number | null; channel: Channel; status: Status; orderNumber: string;
   amountCents: number | null; district: District | null; photos: Photo[]; tagIds: string[]; opinions: Opinion[]; createdBy: string | null;
 };
-type Draft = Omit<Review, "id" | "photos" | "district" | "opinions" | "createdBy"> & { district: District | ""; selectedFoods: string[] };
+type Draft = Omit<Review, "id" | "photos" | "district" | "opinions" | "createdBy" | "restaurantId" | "restaurantProfile"> & { district: District | ""; selectedFoods: string[] };
 type ToolInput = Pick<Draft, "diningDate" | "restaurant" | "food" | "comment" | "channel"> & {
   score: number; district: District; orderNumber?: string; amountHKD?: number; selectedFoods?: string[];
 };
@@ -66,7 +69,7 @@ function AuthorAvatar({ name, pictureUrl }: { name: string; pictureUrl: string |
   const [imageFailed, setImageFailed] = useState(false);
   return pictureUrl && !imageFailed ? <img className="author-avatar" src={pictureUrl} alt="" referrerPolicy="no-referrer" onError={() => setImageFailed(true)} /> : <span className="author-avatar author-avatar-fallback" aria-hidden="true">{name.trim().slice(0, 1) || "?"}</span>;
 }
-const restaurantKey = (review: Pick<Review, "restaurant" | "district">) => `${normalizedRestaurantName(review.restaurant)}::${review.district ?? ""}`;
+const restaurantKey = (review: Pick<Review, "restaurant" | "district" | "restaurantId">) => review.restaurantId ?? `${normalizedRestaurantName(review.restaurant)}::${review.district ?? ""}`;
 type RestaurantGroup = { key: string; visits: Review[] };
 function groupByRestaurant(visits: Review[]): RestaurantGroup[] {
   const groups = new Map<string, RestaurantGroup>();
@@ -509,6 +512,7 @@ export default function ReviewApp({ collection, collections, onSelectCollection,
         <h2>{selectedGroup.visits[0].restaurant}</h2>
         <p>{selectedGroup.visits[0].district ? districtNames[selectedGroup.visits[0].district] : "未分類"} · {selectedGroup.visits.length} 次記錄 · 最近於 {selectedGroup.visits[0].diningDate}</p>
         <p className="restaurant-average">{ratingSummary(selectedGroup.visits)}</p>
+        <RestaurantProfilePanel key={selectedGroup.key} profile={selectedGroup.visits[0].restaurantProfile ?? null} name={selectedGroup.visits[0].restaurant} district={selectedGroup.visits[0].district ? districtNames[selectedGroup.visits[0].district] : ""} collectionId={collection.id} canEdit={collection.role !== "viewer"} onSaved={async () => { await loadReviews(); setMessage("餐廳資料已更新。"); }} />
         {collection.role !== "viewer" && <button type="button" className="button primary" onClick={() => startRepeat(selectedGroup.visits[0])}>＋ 再記一餐</button>}
       </div>
       <h3 className="visit-heading">每次用餐</h3>

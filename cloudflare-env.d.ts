@@ -8,5 +8,7 @@ declare namespace Cloudflare {
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;
     INITIAL_OWNER_EMAIL?: string;
+    RESTAURANT_ENRICHMENT_TOKEN_HASH?: string;
+    RESTAURANT_ENRICHMENT_COLLECTION_IDS?: string;
   }
 }
