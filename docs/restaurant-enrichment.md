@@ -28,6 +28,38 @@ Bearer access remains disabled without both RESTAURANT_ENRICHMENT_TOKEN_HASH and
 
 Only identify the correct OpenRice main page or retain the user-specified Foodpanda fallback. Send only restaurant name and district to search, never private comments, orders or member data. Do not resume earlier address/Maps/photo or Keeta share-link scraping tasks. Do not guess branches, scrape/copy photos or bypass access checks. Save only reviewed source links using fresh versions. Remain quiet on no work, and report changes, unresolved matches or failures. The coordinating chat owns the future schedule; none was created here. A desktop run needs the Mac/app and valid session; no unattended cloud connection exists.
 
+### District correction
+
+The existing link-update endpoint cannot change districts. The
+`list_linked_closerice_restaurants` admin tool pages through branches with a
+saved OpenRice link, including already linked branches on every weekly run. It
+returns only branch identity, district, link, verification state, timestamps,
+manual protection and version. The test ID is excluded. The existing pending
+tool still finds new branches without links.
+
+For a possible correction, open and read the exact saved OpenRice branch page.
+Its visible branch details must explicitly support the new district; a URL
+slug, search snippet, inaccessible page, old cached result or user-supplied
+link alone is insufficient. If the page cannot be verified, leave the
+district and linked meal records unchanged and report the discrepancy. Never
+derive a district from the restaurant brand.
+
+After a fresh `get_closerice_restaurant_profile` read, the
+`correct_closerice_restaurant_district` tool accepts the current
+`expectedVersion`, a valid district code, the identical saved OpenRice URL
+and a specific evidence note. The admin-only
+`PATCH /enrichment/restaurants/{id}/district` checks group scope, manual
+protection, exact source URL, version and same-name target-district collisions.
+It atomically updates the branch and only its linked meal records, records the
+before/after and evidence in the audit log, and returns the number of meals
+updated. A stale or colliding change returns 409; stop and re-read rather than
+guessing. A no-op district returns unchanged without an audit write.
+
+The weekly report should give each corrected branch's old/new district,
+OpenRice page, visible evidence, check time and affected meal count. This
+workflow needs a signed-in admin session on the Mac for the WebMCP tools. It does
+not change the nine existing links or the currently disputed 香港站 district.
+
 ## Release procedure
 
 For an approved release: obtain a fresh complete D1 backup and test its restore; apply 0010, 0011 and 0012; coordinate the matching Worker and GitHub Pages frontend publication while retaining exact exclusion; then re-read profiles and save reviewed source-link proposals with their current versions. Older profile-edit requests use an intentionally removed address/cover shape, so coordinate that rollout. The release is published only after these checks pass. The earlier three FEHD source changes and exact test exclusion were approved/saved/deployed before the later hold.

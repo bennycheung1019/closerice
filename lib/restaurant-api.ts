@@ -3,8 +3,9 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { restaurantBranches } from "../db/schema";
 import { getCollectionAccess, getSessionUser, isSiteAdmin, tokenHash } from "./auth";
+import { districtNames } from "./districts";
 import type { RestaurantProfile } from "./restaurant-profile";
-import { restaurantDetailsInput } from "./restaurant-profile-input";
+import { restaurantDetailsInput, restaurantDistrictInput } from "./restaurant-profile-input";
 import { errorResponse, serverError } from "./reviews";
 
 export async function ensureRestaurantBranch(collectionId: string, name: string, district: string | null): Promise<string> {
@@ -80,6 +81,64 @@ export async function handleRestaurantApi(request: Request, path: string): Promi
         service?.collections ? sql`${restaurantBranches.collectionId} IN (${sql.join(service.collections.map((id) => sql`${id}`), sql`, `)})` : undefined,
       )).orderBy(restaurantBranches.id).limit(limit + 1);
       return json({ restaurants: rows.slice(0, limit), nextCursor: rows.length > limit ? rows[limit - 1].id : null });
+    }
+    if (path === "/api/enrichment/restaurants/linked" && request.method === "GET") {
+      const params = new URL(request.url).searchParams;
+      const cursor = (params.get("cursor") ?? "").slice(0, 80);
+      const limit = Math.min(50, Math.max(1, Number.parseInt(params.get("limit") ?? "25", 10) || 25));
+      const rows = await db.select({
+        id: restaurantBranches.id, collectionId: restaurantBranches.collectionId,
+        name: restaurantBranches.name, district: restaurantBranches.district,
+        openriceUrl: restaurantBranches.openriceUrl, reviewState: restaurantBranches.reviewState,
+        checkedAt: restaurantBranches.checkedAt, manualLock: restaurantBranches.manualLock,
+        version: restaurantBranches.version,
+      }).from(restaurantBranches).where(and(
+        sql`${restaurantBranches.id} > ${cursor}`,
+        sql`${restaurantBranches.openriceUrl} <> ''`,
+        excludedIds.length ? sql`${restaurantBranches.id} NOT IN (${sql.join(excludedIds.map((id) => sql`${id}`), sql`, `)})` : undefined,
+        sql`EXISTS (SELECT 1 FROM reviews r WHERE r.restaurant_id = ${restaurantBranches.id} AND r.collection_id = ${restaurantBranches.collectionId})`,
+        service?.collections ? sql`${restaurantBranches.collectionId} IN (${sql.join(service.collections.map((id) => sql`${id}`), sql`, `)})` : undefined,
+      )).orderBy(restaurantBranches.id).limit(limit + 1);
+      return json({ restaurants: rows.slice(0, limit), nextCursor: rows.length > limit ? rows[limit - 1].id : null });
+    }
+    const districtMatch = /^\/api\/enrichment\/restaurants\/([^/]+)\/district$/.exec(path);
+    if (districtMatch) {
+      if (request.method !== "PATCH") return errorResponse("不支援此操作。", 405);
+      if (excludedIds.includes(districtMatch[1])) return errorResponse("此餐廳已排除自動資料補充。", 404);
+      const current = await db.select().from(restaurantBranches).where(eq(restaurantBranches.id, districtMatch[1])).get() as RestaurantProfile | undefined;
+      if (!current || (service?.collections && !service.collections.includes(current.collectionId))) return errorResponse("找不到餐廳。", 404);
+      if (current.manualLock) return errorResponse("餐廳資料已由成員確認，不能自動覆寫。", 409);
+      const parsed = restaurantDistrictInput.safeParse(await readBody(request));
+      if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? "請檢查地區資料。", 400);
+      const { expectedVersion, district, openriceUrl, evidenceNote } = parsed.data;
+      if (current.version !== expectedVersion) return errorResponse("資料已被其他人更新，請重新讀取後再試。", 409);
+      if (!current.openriceUrl || openriceUrl !== current.openriceUrl) return errorResponse("地區核對必須使用此分店已儲存的 OpenRice 網址。", 400);
+      if (district === current.district) return json({ restaurant: current, changed: false });
+      const collision = await db.select({ id: restaurantBranches.id }).from(restaurantBranches).where(and(
+        eq(restaurantBranches.collectionId, current.collectionId),
+        eq(restaurantBranches.name, current.name),
+        eq(restaurantBranches.district, district),
+      )).get();
+      if (collision) return errorResponse("此餐廳在目標地區已有另一分店，請先由管理員核對。", 409);
+      const now = new Date().toISOString();
+      const note = `OpenRice 分店地區核對（${now.slice(0, 10)}）：${districtNames[district]}。${evidenceNote}`;
+      const reviewNotes = [current.reviewNotes, note].filter(Boolean).join("\n");
+      if (reviewNotes.length > 1000) return errorResponse("核對備註過長，請由管理員整理後再試。", 400);
+      const after = { ...current, district, reviewNotes, checkedAt: now, updatedAt: now, version: expectedVersion + 1 };
+      const auditId = crypto.randomUUID();
+      // Change the branch first: the legacy review trigger otherwise creates a
+      // second branch when it sees a review's new district. D1 batch commits
+      // these statements together; later statements run only for our update.
+      const result = await env.DB!.batch([
+        env.DB!.prepare("UPDATE restaurant_branches SET district=?,review_notes=?,checked_at=?,updated_at=?,version=version+1 WHERE id=? AND version=? AND manual_lock=0")
+          .bind(district, reviewNotes, now, now, current.id, expectedVersion),
+        env.DB!.prepare("INSERT INTO admin_audit (id,actor_user_id,action,target_type,target_id,before_json,after_json,created_at) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM restaurant_branches WHERE id=? AND version=? AND district=? AND updated_at=?)")
+          .bind(auditId, service!.actorId, "restaurant.district.correct", "restaurant", current.id, JSON.stringify(current), JSON.stringify({ ...after, districtEvidenceUrl: openriceUrl, districtEvidenceNote: evidenceNote }), now, current.id, expectedVersion + 1, district, now),
+        env.DB!.prepare("UPDATE reviews SET district=?,updated_at=? WHERE restaurant_id=? AND collection_id=? AND EXISTS (SELECT 1 FROM admin_audit WHERE id=?)")
+          .bind(district, now, current.id, current.collectionId, auditId),
+      ]);
+      if (!result[0].meta.changes) return errorResponse("資料已被其他人更新，請重新讀取後再試。", 409);
+      return json({ restaurant: after, changed: true, updatedReviews: result[2].meta.changes });
     }
     const match = /^\/api\/(?:enrichment\/)?restaurants\/([^/]+)$/.exec(path);
     if (!match) return errorResponse("找不到頁面。", 404);
