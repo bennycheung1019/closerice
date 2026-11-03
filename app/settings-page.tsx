@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowLeft, ChevronRight, List, MoreHorizontal, Plus, Settings, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, ChevronRight, List, MoreHorizontal, Pencil, Plus, Settings, X } from "lucide-react";
 import { collectionFetch, responseJson } from "../lib/client-api";
 import type { CollectionSummary } from "./collection-app";
+
+import HomeScreenTip from "./home-screen-tip";
 
 type Member = { id: string; email: string; name: string; pictureUrl: string | null; role: "owner" | "editor" | "viewer" };
 type Members = { owner: Member | null; members: Member[]; invites: Array<{ id: string; email: string; role: "editor" | "viewer"; expiresAt: number }>; transfer: { toUserId: string; expiresAt: number } | null };
@@ -37,6 +39,8 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
   const [invitedEmail, setInvitedEmail] = useState("");
   const [displayNameInput, setDisplayNameInput] = useState(user.displayName ?? "");
   const [openMemberMenu, setOpenMemberMenu] = useState<string | null>(null);
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false);
+  const groupMenuTrigger = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -49,7 +53,7 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
   }, [message]);
 
   function openPanel(next: NonNullable<typeof panel>) {
-    setError(""); setMessage(""); setInviteLink(""); setOpenMemberMenu(null); setPanel(next);
+    setError(""); setMessage(""); setInviteLink(""); setOpenMemberMenu(null); setGroupMenuOpen(false); setPanel(next);
     if (next === "rename") setRenameName(collection?.name ?? "");
     if (next === "delete") setDeleteName("");
     if (next === "displayName") setDisplayNameInput(user.displayName ?? "");
@@ -61,15 +65,15 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
   }
 
   useEffect(() => {
-    if (!openMemberMenu) return;
+    if (!openMemberMenu && !groupMenuOpen) return;
     const closeOnOutside = (event: PointerEvent) => {
-      if (!(event.target as Element).closest(".member-action-menu")) setOpenMemberMenu(null);
+      if (!(event.target instanceof Element) || !event.target.closest(".member-action-menu, .settings-group-menu")) { setOpenMemberMenu(null); setGroupMenuOpen(false); }
     };
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpenMemberMenu(null); };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") { setOpenMemberMenu(null); setGroupMenuOpen(false); if (groupMenuOpen) groupMenuTrigger.current?.focus(); } };
     document.addEventListener("pointerdown", closeOnOutside);
     document.addEventListener("keydown", closeOnEscape);
     return () => { document.removeEventListener("pointerdown", closeOnOutside); document.removeEventListener("keydown", closeOnEscape); };
-  }, [openMemberMenu]);
+  }, [openMemberMenu, groupMenuOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +86,7 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
       setError("");
       setPanel(null);
       setOpenMemberMenu(null);
+      setGroupMenuOpen(false);
     });
     if (collection?.role === "owner") {
       void collectionFetch(`/api/collections/${collection.id}/members`, collection.id)
@@ -176,19 +181,25 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
     <div className="settings-layout"><div className="settings-main">
       <section className="settings-card" aria-labelledby="settings-groups">
         <div className="settings-card-head"><div><h2 id="settings-groups">食評群組</h2><p>切換群組，查看各自的食評。</p></div><button className="settings-head-button" onClick={() => openPanel("create")}><Plus size={16} aria-hidden="true" />新增</button></div>
-        {collections.length > 0 && <label className="settings-field">目前群組<select aria-label="選擇食評群組" value={selectedId} onChange={(event) => onSelect(event.target.value)}>{collections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+        {collections.length > 0 && <div className="settings-field"><label htmlFor="settings-group-select">目前群組</label><div className="settings-group-selection"><select id="settings-group-select" aria-label="選擇食評群組" value={selectedId} onChange={(event) => { setGroupMenuOpen(false); onSelect(event.target.value); }}>{collections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          {collection?.role === "owner" && <div className="member-action-menu settings-group-menu"><button ref={groupMenuTrigger} type="button" className="member-menu-trigger" aria-label="食評群組選項" aria-haspopup="menu" aria-controls={groupMenuOpen ? "settings-group-actions" : undefined} aria-expanded={groupMenuOpen} onClick={() => { setOpenMemberMenu(null); setGroupMenuOpen(!groupMenuOpen); }} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); setOpenMemberMenu(null); setGroupMenuOpen(true); } }}><MoreHorizontal size={20} aria-hidden="true" /></button>{groupMenuOpen && <div id="settings-group-actions" className="member-menu-panel" role="menu" aria-label="食評群組選項" onKeyDown={(event) => {
+            if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+            const index = items.indexOf(document.activeElement as HTMLButtonElement);
+            const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+            items[next]?.focus();
+          }}><button type="button" role="menuitem" autoFocus onClick={() => openPanel("rename")}>更改群組名稱</button><button type="button" role="menuitem" className="member-menu-danger" onClick={() => openPanel("delete")}>刪除食評群組</button></div>}</div>}
+        </div></div>}
         {collection && <p className="settings-role">你的權限：{roleName}</p>}
-        {collection?.role === "owner" && <div className="settings-row-list"><button className="settings-row-button" onClick={() => openPanel("rename")}><span>更改群組名稱</span><ChevronRight size={18} aria-hidden="true" /></button><button className="settings-row-button settings-row-danger" onClick={() => openPanel("delete")}><span>刪除食評群組</span><ChevronRight size={18} aria-hidden="true" /></button></div>}
-      </section>
-      {collection && pendingTransfers.some((item) => item.collectionId === collection.id) && <section className="settings-card transfer-banner"><div><h2>擁有權轉讓</h2><p>群組擁有人邀請你接手「{collection.name}」。</p></div><button className="button primary" disabled={busy} onClick={() => void action(`/api/collections/${collection.id}/transfer/accept`, { method: "POST" }, "你已成為群組擁有人。")}>接受擁有權</button></section>}
-      {collection?.role === "owner" && <section className="settings-card" aria-labelledby="settings-members">
-        <div className="settings-card-head"><div><h2 id="settings-members">成員與權限</h2><p>{members ? `目前有 ${1 + members.members.length} 位成員` : "管理群組的分享權限。"}</p></div><button className="settings-head-button" onClick={() => openPanel("invite")}><Plus size={16} aria-hidden="true" />邀請</button></div>
+      {collection?.role === "owner" && <div className="settings-members-section" role="region" aria-labelledby="settings-members">
+        <div className="settings-card-head"><div><h3 id="settings-members">成員與權限</h3><p>{members ? `目前有 ${1 + members.members.length} 位成員` : "管理群組的分享權限。"}</p></div><button className="settings-head-button" onClick={() => openPanel("invite")}><Plus size={16} aria-hidden="true" />邀請</button></div>
         {!members ? <p role="status">正在讀取成員…</p> : <div className="member-list">
           {members.owner && <div className="member-row"><MemberAvatar name={members.owner.name || members.owner.email} pictureUrl={members.owner.pictureUrl} /><span className="member-identity"><strong>{members.owner.name || members.owner.email}</strong><small>{members.owner.email}</small></span><span className="member-role">擁有人</span></div>}
           {members.members.map((member) => <div className="member-row" key={member.id}>
             <MemberAvatar name={member.name || member.email} pictureUrl={member.pictureUrl} />
             <span className="member-identity"><strong>{member.name || member.email}</strong><small>{member.email} · {member.role === "editor" ? "可編輯" : "只可查看"}</small></span>
-            <div className="member-action-menu"><button type="button" className="member-menu-trigger" aria-label={`${member.name || member.email} 的選項`} aria-haspopup="menu" aria-expanded={openMemberMenu === member.id} onClick={() => setOpenMemberMenu(openMemberMenu === member.id ? null : member.id)}><MoreHorizontal size={20} aria-hidden="true" /></button>{openMemberMenu === member.id && <div className="member-menu-panel" role="menu">
+            <div className="member-action-menu"><button type="button" className="member-menu-trigger" aria-label={`${member.name || member.email} 的選項`} aria-haspopup="menu" aria-expanded={openMemberMenu === member.id} onClick={() => { setGroupMenuOpen(false); setOpenMemberMenu(openMemberMenu === member.id ? null : member.id); }}><MoreHorizontal size={20} aria-hidden="true" /></button>{openMemberMenu === member.id && <div className="member-menu-panel" role="menu">
               <button type="button" role="menuitem" disabled={busy} onClick={() => void action(`/api/collections/${selectedId}/members/${member.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: member.role === "editor" ? "viewer" : "editor" }) }, "成員權限已更新。")}>改為{member.role === "editor" ? "只可查看" : "可編輯"}</button>
               <button type="button" role="menuitem" disabled={busy} onClick={() => { setOpenMemberMenu(null); if (window.confirm(`把「${collection.name}」的擁有權轉讓給 ${member.email}？對方接受後才會生效。`)) void action(`/api/collections/${selectedId}/transfer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: member.id }) }, "擁有權轉讓邀請已送出。"); }}>轉讓擁有權</button>
               <button type="button" role="menuitem" className="member-menu-danger" disabled={busy} onClick={() => { setOpenMemberMenu(null); if (window.confirm(`移除 ${member.email}？`)) void action(`/api/collections/${selectedId}/members/${member.id}`, { method: "DELETE" }, "成員已移除。"); }}>移除成員</button>
@@ -197,8 +208,10 @@ export default function SettingsPage({ user, isAdmin, collections, pendingTransf
         </div>}
         {members && members.invites.length > 0 && <div className="settings-pending"><h3>待接受邀請</h3>{members.invites.map((item) => <div className="member-row" key={item.id}><span className="member-avatar member-avatar-fallback" aria-hidden="true">✉</span><span className="member-identity"><strong>{item.email}</strong><small>{item.role === "editor" ? "可編輯" : "只可查看"}</small></span><div className="member-action-menu"><button type="button" className="member-menu-trigger" aria-label={`${item.email} 邀請選項`} aria-haspopup="menu" aria-expanded={openMemberMenu === item.id} onClick={() => setOpenMemberMenu(openMemberMenu === item.id ? null : item.id)}><MoreHorizontal size={20} aria-hidden="true" /></button>{openMemberMenu === item.id && <div className="member-menu-panel" role="menu"><button type="button" role="menuitem" className="member-menu-danger" disabled={busy} onClick={() => void action(`/api/collections/${selectedId}/invites/${item.id}`, { method: "DELETE" }, "邀請已撤銷。")}>撤銷邀請</button></div>}</div></div>)}</div>}
         {members?.transfer && <p className="settings-transfer-note">擁有權轉讓待接受。<button className="button text-danger" disabled={busy} onClick={() => void action(`/api/collections/${selectedId}/transfer`, { method: "DELETE" }, "擁有權轉讓已取消。")}>取消轉讓</button></p>}
-      </section>}
-    </div><aside className="settings-side"><section className="settings-card" aria-labelledby="settings-account"><h2 id="settings-account">你的帳戶</h2><div className="settings-profile"><MemberAvatar name={user.name || user.email} pictureUrl={user.pictureUrl} /><div><strong>{user.name || "Google 帳戶"}</strong><small>{user.email}</small></div></div><div className="settings-row-list settings-account-actions"><button type="button" className="settings-row-button" onClick={() => openPanel("displayName")}><span>顯示名稱</span><ChevronRight size={18} aria-hidden="true" /></button>{isAdmin && <a className="settings-row-button" href="/closerice/admin/"><span>管理後台</span><ChevronRight size={18} aria-hidden="true" /></a>}</div><button className="button secondary settings-logout" onClick={() => void onLogout()}>登出</button></section></aside></div>
+      </div>}
+      </section>
+      {collection && pendingTransfers.some((item) => item.collectionId === collection.id) && <section className="settings-card transfer-banner"><div><h2>擁有權轉讓</h2><p>群組擁有人邀請你接手「{collection.name}」。</p></div><button className="button primary" disabled={busy} onClick={() => void action(`/api/collections/${collection.id}/transfer/accept`, { method: "POST" }, "你已成為群組擁有人。")}>接受擁有權</button></section>}
+    </div><aside className="settings-side"><section className="settings-card" aria-labelledby="settings-account"><h2 id="settings-account">你的帳戶</h2><div className="settings-profile"><MemberAvatar name={user.name || user.email} pictureUrl={user.pictureUrl} /><div><div className="settings-profile-name"><strong>{user.name || "Google 帳戶"}</strong><button type="button" className="settings-name-edit" aria-label="更改顯示名稱" title="更改顯示名稱" onClick={() => openPanel("displayName")}><Pencil size={16} aria-hidden="true" /></button></div><small>{user.email}</small></div></div><div className="settings-row-list settings-account-actions">{isAdmin && <a className="settings-row-button" href="/closerice/admin/"><span>管理後台</span><ChevronRight size={18} aria-hidden="true" /></a>}</div><button className="button secondary settings-logout" onClick={() => void onLogout()}>登出</button></section><HomeScreenTip /></aside></div>
     {panel && <div className="overlay settings-panel-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setPanel(null); }}><section className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-panel-title"><div className="settings-panel-head"><button className="settings-panel-back" onClick={() => setPanel(null)} aria-label="返回設定"><ArrowLeft size={20} aria-hidden="true" /></button><h2 id="settings-panel-title">{{ create: "建立食評群組", invite: "邀請新成員", displayName: "更改顯示名稱", rename: "更改群組名稱", delete: "刪除食評群組" }[panel]}</h2><button className="settings-panel-close" onClick={() => setPanel(null)} aria-label="關閉"><X size={20} aria-hidden="true" /></button></div>
       {error && <div className="notice error" role="alert">{error}</div>}
       {panel === "create" && <><p className="settings-panel-hint">每個群組有自己的食評和成員。建立後，你會成為擁有人。</p><form className="settings-panel-form" onSubmit={createCollection}><label className="settings-field">群組名稱<input required autoFocus maxLength={60} value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="例如：Home、Work" /></label><button className="button primary" type="submit" disabled={busy || !newName.trim()}>建立群組</button></form></>}
